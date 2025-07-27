@@ -27,7 +27,7 @@
 1. Clone and setup
 ```bash
 git clone https://github.com/yourusername/Smart_Event_Registration.git
-cd college-tech-summit-registration
+cd Smart_Event_Registration
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
