@@ -46,11 +46,11 @@ python app.py
 ```
 ---
 # How does it work?
-Students fill registration form and upload profile photo + payment proof
-OCR extracts transaction ID from payment screenshot
-System generates personalized placard with QR code
-Confirmation email sent with placard attachment
-All data stored in SQLite database
+- Students fill registration form and upload profile photo + payment proof
+- OCR extracts transaction ID from payment screenshot
+- System generates personalized placard with QR code
+- Confirmation email sent with placard attachment
+- All data stored in SQLite database
 ---
 ## Future Improvements
 
