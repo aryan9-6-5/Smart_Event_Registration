@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>College Tech Summit 2024</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+
+<body>
+    <header class="gradient-header">
+        <h1>College Tech Summit 2024</h1>
+        <p>Register now for the biggest technology event of the year!</p>
+    </header>
+
+    <main class="container">
+        <section class="form-section">
+            <h2 class="section-title">Registration Form</h2>
+
+            {% if error %}
+            <div class="error-banner">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="POST" class="registration-form" enctype="multipart/form-data">
+                {{ form.csrf_token }}
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        {{ form.name.label }}
+                        {{ form.name(class="input-field") }}
+                    </div>
+                    <div class="form-group">
+                        {{ form.email.label }}
+                        {{ form.email(class="input-field") }}
+                    </div>
+                    <div class="form-group">
+                        {{ form.roll_number.label }}
+                        {{ form.roll_number(class="input-field") }}
+                    </div>
+                    <div class="form-group">
+                        {{ form.dept_name.label }}
+                        {{ form.dept_name(class="input-field") }}
+                    </div>
+                    <div class="form-group">
+                        {{ form.college_name.label }}
+                        {{ form.college_name(class="input-field") }}
+                    </div>
+                    <div class="form-group" id="trans-id-group" style="display: none;">
+                        {{ form.trans_id.label }}
+                        {{ form.trans_id(class="input-field") }}
+                    </div>
+                    <div class="form-group">
+                        {{ form.phone.label }}
+                        {{ form.phone(class="input-field") }}
+                    </div>
+                </div>
+
+                <div class="file-upload-group">
+                    <div class="upload-card">
+                        <h3>Profile Photo</h3>
+                        <input type="file" id="profile-upload" name="profile" accept="image/*" class="file-input">
+                        <label for="profile-upload" class="file-label">Choose Profile Photo</label>
+                        <div class="progress-container" style="display: none;">
+                            <progress id="profile-progress" value="0" max="100"></progress>
+                            <span id="profile-progress-text">0%</span>
+                        </div>
+                        <img id="profile-preview" src="" style="display:none; width: 120px; margin-top: 10px;" />
+                        {{ form.profile_path(id="profile_path", style="display: none;") }}
+                    </div>
+
+                    <div class="upload-card">
+                        <h3>Payment Proof</h3>
+                        <input type="file" id="payment-upload" name="payment" accept="image/*" class="file-input">
+                        <label for="payment-upload" class="file-label">Choose Payment Screenshot</label>
+                        <div class="progress-container" style="display: none;">
+                            <progress id="payment-progress" value="0" max="100"></progress>
+                            <span id="payment-progress-text">0%</span>
+                        </div>
+                        <img id="payment-preview" src="" style="display:none; width: 120px; margin-top: 10px;" />
+                        {{ form.payment_path(id="payment_path", style="display: none;") }}
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn">
+                    Complete Registration
+                    <span class="loading-dots"></span>
+                </button>
+            </form>
+        </section>
+
+        <section class="payment-info">
+            <div class="payment-card">
+                <h3>Payment Instructions</h3>
+                <div class="qr-container">
+                    <img src="{{ url_for('static', filename='images/payment_qr.png') }}" alt="Payment QR Code"
+                        class="payment-qr">
+                    <a href="{{ url_for('static', filename='images/payment_qr_large.png') }}" target="_blank"
+                        class="qr-enlarge">
+                        View Larger
+                    </a>
+                </div>
+                <p class="fee">Registration Fee: ₹500</p>
+                <p class="note">Complete payment before form submission</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="main-footer">
+        <p>© 2024 College Tech Summit. All rights reserved.</p>
+        <nav class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Contact</a>
+        </nav>
+    </footer>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+
+</html>

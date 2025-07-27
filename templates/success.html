@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registration Successful</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <header class="gradient-header">
+        <h1>🎉 Registration Successful 🎉</h1>
+        <p>Welcome to the Tech Summit 2024! We’re excited to have you.</p>
+    </header>
+
+    <main class="success-container">
+        <div class="success-card">
+            <h2>You're In! 🚀</h2>
+            <p class="success-message">
+                Your registration has been confirmed! A confirmation email with your ticket has been sent.
+                Please bring this placard to the event.
+            </p>
+            
+            <div class="placard-container">
+                <img src="{{ placard_url }}" alt="Your Event Placard" class="event-placard">
+            </div>
+            
+            <div class="success-actions">
+                <a href="/" class="btn primary-btn">🏠 Return Home</a>
+                <button class="btn secondary-btn" onclick="downloadPlacard()">⬇ Download Placard</button>
+            </div>
+        </div>
+    </main>
+
+    <footer class="main-footer">
+        <p>© 2024 College Tech Summit. All rights reserved.</p>
+        <nav class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Contact</a>
+        </nav>
+    </footer>
+
+    <script>
+        function downloadPlacard() {
+            const link = document.createElement('a');
+            link.href = "{{ placard_url }}";
+            link.download = "tech-summit-placard.jpg";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
