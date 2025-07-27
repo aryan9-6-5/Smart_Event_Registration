@@ -1,0 +1,348 @@
+:root {
+    --primary-color: #1a237e;
+    --secondary-color: #4CAF50;
+    --accent-color: #FFC107;
+    --background-light: #f8f9fa;
+    --text-dark: #2d3436;
+    --error-color: #e74c3c;
+    --white: #ffffff;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--background-light);
+    color: var(--text-dark);
+}
+
+/* Header */
+.gradient-header {
+    background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+    color: white;
+    padding: 2rem 1rem;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+/* Form Section */
+.container {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 2rem;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 2rem auto;
+    flex: 1;
+}
+
+.form-section {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.section-title {
+    font-size: 2rem;
+    color: var(--primary-color);
+    margin-bottom: 1.5rem;
+}
+
+/* Form Input Fields */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.input-field {
+    width: 100%;
+    padding: 0.8rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.input-field:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 8px rgba(26, 35, 126, 0.2);
+    outline: none;
+}
+
+/* File Upload */
+.file-upload-group {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.upload-card {
+    border: 2px dashed #bdbdbd;
+    padding: 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.upload-card:hover {
+    border-color: var(--primary-color);
+    background: rgba(26, 35, 126, 0.05);
+}
+
+.file-input {
+    display: none;
+}
+
+/* Submit Button */
+.submit-btn {
+    background: linear-gradient(135deg, var(--primary-color) 0%, #303f9f 100%);
+    color: white;
+    padding: 1rem 2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    width: 100%;
+    transition: transform 0.2s ease;
+    position: relative;
+}
+
+.submit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Payment Information */
+.payment-info {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    height: fit-content;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.payment-card {
+    text-align: center;
+}
+
+.qr-container {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.payment-qr {
+    width: 200px;
+    height: auto;
+    border-radius: 6px;
+}
+
+.qr-enlarge {
+    display: block;
+    margin-top: 1rem;
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+/* Footer */
+.main-footer {
+    background: var(--primary-color);
+    color: white;
+    padding: 1.5rem;
+    text-align: center;
+    margin-top: auto;
+}
+
+.footer-links a {
+    color: white;
+    margin: 0 10px;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.footer-links a:hover {
+    text-decoration: underline;
+}
+
+/* Error Banner */
+.error-banner {
+    background: #fee;
+    color: var(--error-color);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    border: 1px solid var(--error-color);
+}
+
+/* Progress Bar */
+.progress-container {
+    width: 100%;
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+progress {
+    width: 80%;
+    height: 8px;
+    border-radius: 4px;
+    appearance: none;
+}
+
+progress::-webkit-progress-bar {
+    background-color: #ddd;
+    border-radius: 4px;
+}
+
+progress::-webkit-progress-value {
+    background: var(--primary-color);
+    border-radius: 4px;
+}
+
+progress::-moz-progress-bar {
+    background: var(--primary-color);
+    border-radius: 4px;
+}
+
+/* Success Page */
+.success-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 60vh;
+    padding: 2rem;
+}
+
+.success-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    text-align: center;
+    animation: fadeIn 0.6s ease-in-out;
+}
+
+.success-card h2 {
+    font-size: 1.8rem;
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+.success-message {
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+}
+
+.placard-container {
+    margin-bottom: 1.5rem;
+}
+
+.event-placard {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.success-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+}
+
+.btn {
+    padding: 0.8rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.primary-btn {
+    background: var(--primary-color);
+    color: var(--white);
+}
+
+.primary-btn:hover {
+    background: #303f9f;
+}
+
+.secondary-btn {
+    background: var(--accent-color);
+    color: var(--text-dark);
+}
+
+.secondary-btn:hover {
+    background: #ff9800;
+}
+#trans-id-group {
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+
+#trans-id-group.visible {
+    display: block !important;
+    opacity: 1;
+}/* Add this to your existing styles.css */
+.file-label {
+    display: inline-block;
+    padding: 0.8rem 1.5rem;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.file-label:hover {
+    background: #303f9f;
+    transform: translateY(-2px);
+}
+
+.file-input {
+    display: none;
+}
+
+.progress-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.progress-container progress {
+    flex: 1;
+    height: 8px;
+}
+/* Smooth Fade In */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
