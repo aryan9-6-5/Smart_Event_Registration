@@ -1,5 +1,5 @@
 # Smart Event Registration System
-A Flask web application that handles event registration with file uploads, OCR-based payment verification, and automated placard generation.
+### A Flask web application that handles event registration with file uploads, OCR-based payment verification, and automated placard generation.
 This project is a complete event registration system built using Flask for the backend and HTML, CSS, and JavaScript for the frontend. It was developed for managing registrations for the College Tech Summit 2024.
 The system allows students to register for the event by submitting a form that includes their personal details, a profile photo, and a payment screenshot. The backend uses OCR to extract the transaction ID from the uploaded payment proof and pre-fills it in the form to prevent fraudulent reuse. A personalized placard with a QR code is generated for each student and sent via email as confirmation.
 ---
@@ -13,10 +13,10 @@ The system allows students to register for the event by submitting a form that i
 - SQLite database to store all registration records
 - Clean file naming and folder structure for all uploads
 ## File Storage Structure
-static/uploads/profiles/<ROLLNUMBER>profile.png
-static/uploads/payments/<ROLLNUMBER>payment.png
-static/placards/placard<ROLLNUMBER>.jpg
-static/tickets/ticket<ROLLNUMBER>.png
+- static/uploads/profiles/<ROLLNUMBER>profile.png
+- static/uploads/payments/<ROLLNUMBER>payment.png
+- static/placards/placard<ROLLNUMBER>.jpg
+- static/tickets/ticket<ROLLNUMBER>.png
 ## Tech Stack
 - Backend: Flask, WTForms, SQLite
 - Image Processing: Pillow, qrcode
