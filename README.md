@@ -24,7 +24,7 @@ The system allows students to register for the event by submitting a form that i
 - Frontend: HTML, CSS, JavaScript
 - Email: SMTP integration
 ---
-#To run this applications
+# To run this applications
 1. Clone and setup
 ```bash
 git clone https://github.com/yourusername/college-tech-summit-registration.git
