@@ -26,7 +26,7 @@
 # To run this applications
 1. Clone and setup
 ```bash
-git clone https://github.com/yourusername/college-tech-summit-registration.git
+git clone https://github.com/yourusername/Smart_Event_Registration.git
 cd college-tech-summit-registration
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
