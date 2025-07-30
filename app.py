@@ -111,54 +111,109 @@ def init_db():
             placard_path TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
 
+# def generate_placard(name, roll, dept, college, phone, profile_path):
+#     placard = Image.new('RGB', (1200, 800), '#ffffff')
+#     draw = ImageDraw.Draw(placard)
+
+#     try:
+#         title_font = ImageFont.truetype('static/fonts/Poppins-Bold.ttf', 48)
+#         header_font = ImageFont.truetype('static/fonts/Poppins-SemiBold.ttf', 36)
+#         text_font = ImageFont.truetype('static/fonts/Poppins-Regular.ttf', 32)
+#     except IOError:
+#         print("Font loading error - using default font")
+#         title_font = header_font = text_font = ImageFont.load_default()
+
+#     draw.rectangle([(0, 0), (1200, 120)], fill='#1a237e')
+#     draw.text((600, 60), "College Tech Summit 2024", fill='#ffffff', font=title_font, anchor='mm')
+
+#     try:
+#         profile = Image.open(profile_path).convert('RGB')
+#         profile.thumbnail((300, 300), Image.Resampling.LANCZOS)
+#         placard.paste(profile, (50, 150))
+#     except Exception as e:
+#         print(f"Error loading profile image: {e}")
+#         # Create a placeholder image
+#         placeholder = Image.new('RGB', (300, 300), color='gray')
+#         draw_p = ImageDraw.Draw(placeholder)
+#         draw_p.text((150, 150), "No Image", fill="white", anchor='mm')
+#         placard.paste(placeholder, (50, 150))
+
+#     details = [("Name", name), ("Roll Number", roll), ("Department", dept), 
+#               ("College", college), ("Phone", phone)]
+#     y_offset = 180
+#     for label, value in details:
+#         draw.text((400, y_offset), f"{label}:", fill='#1a237e', font=header_font)
+#         draw.text((550, y_offset), value, fill='#1a237e', font=text_font)
+#         y_offset += 60
+
+#     # Generate and save QR code
+#     qr_data = f"TECH24-{roll}"
+#     qr_img = qrcode.make(qr_data)
+#     qr_path = f"static/tickets/ticket_{roll}.png"
+#     qr_img.save(qr_path)
+    
+#     # Resize and paste QR code
+#     qr = Image.open(qr_path).resize((250, 250), Image.Resampling.LANCZOS)
+#     placard.paste(qr, (850, 500))
+
+#     draw.rectangle([(0, 750), (1200, 800)], fill='#1a237e')
+#     draw.text((600, 775), "Bring this placard to the event for entry", 
+#              fill='#ffffff', font=text_font, anchor='mm')
+
+#     placard_path = f"static/placards/placard_{roll}.jpg"
+#     placard.save(placard_path)
+#     return placard_path
+
 def generate_placard(name, roll, dept, college, phone, profile_path):
-    placard = Image.new('RGB', (1200, 800), '#ffffff')
+    placard = Image.new('RGB', (1000, 600), '#ffffff')  # Smaller canvas
     draw = ImageDraw.Draw(placard)
 
     try:
-        title_font = ImageFont.truetype('static/fonts/Poppins-Bold.ttf', 48)
-        header_font = ImageFont.truetype('static/fonts/Poppins-SemiBold.ttf', 36)
-        text_font = ImageFont.truetype('static/fonts/Poppins-Regular.ttf', 32)
+        title_font = ImageFont.truetype('static/fonts/Poppins-Bold.ttf', 52)
+        header_font = ImageFont.truetype('static/fonts/Poppins-SemiBold.ttf', 40)
+        text_font = ImageFont.truetype('static/fonts/Poppins-Regular.ttf', 36)
     except IOError:
         print("Font loading error - using default font")
         title_font = header_font = text_font = ImageFont.load_default()
 
-    draw.rectangle([(0, 0), (1200, 120)], fill='#1a237e')
-    draw.text((600, 60), "College Tech Summit 2024", fill='#ffffff', font=title_font, anchor='mm')
+    # Header bar
+    draw.rectangle([(0, 0), (1000, 100)], fill='#1a237e')
+    draw.text((500, 50), "College Tech Summit 2024", fill='#ffffff', font=title_font, anchor='mm')
 
+    # Load profile image
     try:
         profile = Image.open(profile_path).convert('RGB')
-        profile.thumbnail((300, 300), Image.Resampling.LANCZOS)
-        placard.paste(profile, (50, 150))
+        profile.thumbnail((350, 350), Image.Resampling.LANCZOS)
+        placard.paste(profile, (40, 130))
     except Exception as e:
-        print(f"Error loading profile image: {e}")
-        # Create a placeholder image
-        placeholder = Image.new('RGB', (300, 300), color='gray')
+        print(f"⚠️ Error loading profile image: {e}")
+        placeholder = Image.new('RGB', (350, 350), color='gray')
         draw_p = ImageDraw.Draw(placeholder)
-        draw_p.text((150, 150), "No Image", fill="white", anchor='mm')
-        placard.paste(placeholder, (50, 150))
+        draw_p.text((175, 175), "No Image", fill="white", font=header_font, anchor='mm')
+        placard.paste(placeholder, (40, 130))
 
-    details = [("Name", name), ("Roll Number", roll), ("Department", dept), 
-              ("College", college), ("Phone", phone)]
-    y_offset = 180
+    # User details
+    details = [("Name", name), ("Roll Number", roll), ("Department", dept),
+               ("College", college), ("Phone", phone)]
+    y_offset = 140
     for label, value in details:
-        draw.text((400, y_offset), f"{label}:", fill='#1a237e', font=header_font)
-        draw.text((550, y_offset), value, fill='#1a237e', font=text_font)
+        draw.text((420, y_offset), f"{label}:", fill='#1a237e', font=header_font)
+        draw.text((620, y_offset), value, fill='#1a237e', font=text_font)
         y_offset += 60
 
-    # Generate and save QR code
+    # QR Code generation
     qr_data = f"TECH24-{roll}"
     qr_img = qrcode.make(qr_data)
     qr_path = f"static/tickets/ticket_{roll}.png"
     qr_img.save(qr_path)
-    
-    # Resize and paste QR code
-    qr = Image.open(qr_path).resize((250, 250), Image.Resampling.LANCZOS)
-    placard.paste(qr, (850, 500))
 
-    draw.rectangle([(0, 750), (1200, 800)], fill='#1a237e')
-    draw.text((600, 775), "Bring this placard to the event for entry", 
-             fill='#ffffff', font=text_font, anchor='mm')
+    qr = Image.open(qr_path).resize((180, 180), Image.Resampling.LANCZOS)
+    placard.paste(qr, (780, 390))
+
+    # Footer bar
+    draw.rectangle([(0, 560), (1000, 600)], fill='#1a237e')
+    draw.text((500, 580), "Bring this placard to the event for entry", 
+              fill='#ffffff', font=text_font, anchor='mm')
 
     placard_path = f"static/placards/placard_{roll}.jpg"
     placard.save(placard_path)
@@ -323,8 +378,12 @@ def index():
             
         except Exception as e:
             return render_template('index.html', form=form, error=f"Test error: {str(e)}")
-    
+    if not form.validate_on_submit():
+        print("❌ Form validation failed")
+        print("Form errors:", form.errors)
     elif form.validate_on_submit():
+        print("Form submitted with data:", {field.name: field.data for field in form})
+        print("✅ form.validate_on_submit passed")
         try:
             profile_path = form.profile_path.data
             payment_path = form.payment_path.data
