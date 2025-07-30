@@ -1,4 +1,4 @@
-:root {
+/* :root {
     --primary-color: #1a237e;
     --secondary-color: #4CAF50;
     --accent-color: #FFC107;
@@ -6,7 +6,18 @@
     --text-dark: #2d3436;
     --error-color: #e74c3c;
     --white: #ffffff;
+} */
+ :root {
+    --primary-color: #1A2A45;
+    --secondary-color: #94A3B8;
+    --accent-color: #94A3B8;
+    --background-light: #F8FAFC;
+    --soft-background: #E6EDF5;
+    --text-dark: #1E293B;
+    --error-color: #e74c3c;
+    --white: #ffffff;
 }
+
 
 * {
     margin: 0;
@@ -25,7 +36,7 @@ body {
 
 /* Header */
 .gradient-header {
-    background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+    background: linear-gradient(135deg, #1A2A45 0%, #24344f 100%);
     color: white;
     padding: 2rem 1rem;
     text-align: center;
@@ -67,7 +78,7 @@ body {
 .input-field {
     width: 100%;
     padding: 0.8rem;
-    border: 2px solid #e0e0e0;
+    border: 2px solid var(--accent-color);
     border-radius: 8px;
     font-size: 1rem;
     transition: all 0.3s ease;
@@ -97,8 +108,9 @@ body {
 
 .upload-card:hover {
     border-color: var(--primary-color);
-    background: rgba(26, 35, 126, 0.05);
+    background: rgba(26, 42, 69, 0.05); /* Adjusted for #1A2A45 */
 }
+
 
 .file-input {
     display: none;
@@ -139,7 +151,7 @@ body {
 .qr-container {
     margin: 1.5rem 0;
     padding: 1rem;
-    background: #f8f9fa;
+    background: var(--soft-background);
     border-radius: 8px;
 }
 
@@ -204,15 +216,13 @@ progress {
 }
 
 progress::-webkit-progress-bar {
-    background-color: #ddd;
+    background-color: var(--accent-color);
     border-radius: 4px;
 }
-
 progress::-webkit-progress-value {
     background: var(--primary-color);
     border-radius: 4px;
 }
-
 progress::-moz-progress-bar {
     background: var(--primary-color);
     border-radius: 4px;
@@ -335,6 +345,12 @@ progress::-moz-progress-bar {
     flex: 1;
     height: 8px;
 }
+.primary-btn:hover,
+.submit-btn:hover,
+.file-label:hover {
+    background: #24344f; /* darker shade of #1A2A45 */
+}
+
 /* Smooth Fade In */
 @keyframes fadeIn {
     from {
