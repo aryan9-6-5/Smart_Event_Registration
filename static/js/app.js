@@ -38,17 +38,19 @@ function handleFileUpload(fileInput, progressBar, progressText, pathField, type)
         if (xhr.status === 200) {
             const response = JSON.parse(xhr.responseText);
             pathField.value = response.path;
-
+            
+            const uploadCard = fileInput.closest('.upload-card');
+            if (uploadCard) {
+                uploadCard.classList.add('uploaded');
+            }
             // Show uploaded image preview
             const previewId = type === 'profile' ? 'profile-preview' : 'payment-preview';
             const preview = document.getElementById(previewId);
-            if (preview && response.path) {
-                // Create proper URL for preview
-                preview.src = '/' + response.path.replace('static/', '');
+            if (preview) {
+                preview.src = URL.createObjectURL(file); // Local preview
                 preview.style.display = 'block';
             }
 
-            // Reveal and autofill transaction ID for payment uploads
             if (type === 'payment' && response.trans_id) {
                 const transInput = document.querySelector('input[name="trans_id"]');
                 const transGroup = document.getElementById('trans-id-group');
@@ -61,7 +63,8 @@ function handleFileUpload(fileInput, progressBar, progressText, pathField, type)
             }
 
             progressText.textContent = 'Upload complete!';
-            progressText.style.color = 'green';
+            progressText.classList.add('upload-complete');
+            progressText.style.color = 'white';
         } else {
             progressText.textContent = 'Upload failed!';
             progressText.style.color = 'red';
@@ -106,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const label = document.querySelector('label[for="profile-upload"]');
         if (this.files.length > 0) {
             label.textContent = this.files[0].name;
-            label.style.color = '#4CAF50';
+            label.style.color = 'white';
         }
     });
 
@@ -114,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const label = document.querySelector('label[for="payment-upload"]');
         if (this.files.length > 0) {
             label.textContent = this.files[0].name;
-            label.style.color = '#4CAF50';
+            label.style.color = 'white';
         }
     });
 });
