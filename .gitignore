@@ -6,6 +6,7 @@ env/
 # Secrets and environment variables
 .env
 *.env
+my_token.py
 
 # Local SQLite databases
 *.db
@@ -37,3 +38,5 @@ static/tickets/*
 # System files
 .DS_Store
 Thumbs.db
+
+my_token.py
