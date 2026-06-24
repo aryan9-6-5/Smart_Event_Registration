@@ -8,106 +8,248 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+<script>
+    // Globally scoped event configurations for JavaScript dynamic updates
+    const EVENT_CONFIG = {
+        title: "{{ event_title }}",
+        subtitle: "{{ event_subtitle }}",
+        date: "{{ event_date }}",
+        ticketPrefix: "{{ ticket_prefix }}"
+    };
+</script>
 </head>
 
 <body>
-    <header class="gradient-header">
-        <h1>College Tech Summit 2024</h1>
-        <p>Register now for the biggest technology event of the year!</p>
+    <header class="main-header">
+        <div class="header-content">
+            <h1>{{ event_title }}</h1>
+            <p>{{ event_description }}</p>
+        </div>
     </header>
 
     <main class="container">
+        <!-- Left Column: Registration Form -->
         <section class="form-section">
             <h2 class="section-title">Registration Form</h2>
 
             {% if error %}
             <div class="error-banner">
-                {{ error }}
+                <span>{{ error }}</span>
+                <a href="/" class="reset-link">Reset Form</a>
             </div>
             {% endif %}
 
-            <form method="POST" class="registration-form" enctype="multipart/form-data">
+            <form method="POST" class="registration-form" enctype="multipart/form-data" novalidate>
                 {{ form.csrf_token }}
 
                 <div class="form-grid">
                     <div class="form-group">
                         {{ form.name.label }}
-                        {{ form.name(class="input-field") }}
+                        {{ form.name(class="input-field", placeholder="e.g. Hanumakonda Aryan", id="name") }}
+                        {% for err in form.name.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.email.label }}
-                        {{ form.email(class="input-field") }}
+                        {{ form.email(class="input-field", placeholder="e.g. aryan@college.edu", id="email") }}
+                        {% for err in form.email.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.roll_number.label }}
-                        {{ form.roll_number(class="input-field") }}
+                        {{ form.roll_number(class="input-field", placeholder="e.g. 23881A6623", id="roll_number") }}
+                        {% for err in form.roll_number.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.dept_name.label }}
-                        {{ form.dept_name(class="input-field") }}
+                        {{ form.dept_name(class="input-field", placeholder="e.g. CSM", id="dept_name") }}
+                        {% for err in form.dept_name.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.college_name.label }}
-                        {{ form.college_name(class="input-field") }}
+                        {{ form.college_name(class="input-field", placeholder="e.g. Vardhaman College of Engineering", id="college_name") }}
+                        {% for err in form.college_name.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group" id="trans-id-group" style="display: none;">
                         {{ form.trans_id.label }}
-                        {{ form.trans_id(class="input-field") }}
+                        <div class="input-with-icon">
+                            {{ form.trans_id(class="input-field", id="trans_id") }}
+                            <span class="lock-icon" id="trans-lock-icon" style="display: none;">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" style="width: 16px; height: 16px;">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                                </svg>
+                            </span>
+                        </div>
+                        {% for err in form.trans_id.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.phone.label }}
-                        {{ form.phone(class="input-field") }}
+                        {{ form.phone(class="input-field", placeholder="e.g. 9346237108", id="phone") }}
+                        <span class="char-counter" id="phone-counter">0/10</span>
+                        {% for err in form.phone.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                 </div>
 
                 <div class="file-upload-group">
                     <div class="upload-card">
-                        <h3 >Profile Photo</h3>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        <h3>Profile Photo</h3>
+                        <p>Upload a clear front-facing profile photo</p>
                         <input type="file" id="profile-upload" name="profile" accept="image/*" class="file-input">
-                        <label for="profile-upload" class="file-label">Choose Profile Photo</label>
+                        <label for="profile-upload" class="file-label">Choose Photo</label>
                         <div class="progress-container" style="display: none;">
                             <progress id="profile-progress" value="0" max="100"></progress>
                             <span id="profile-progress-text">0%</span>
                         </div>
-                        <img id="profile-preview" src="" style="display:none; width: 120px; margin-top: 10px;" />
+                        <img id="profile-preview" src="" style="display:none;" />
                         {{ form.profile_path(id="profile_path", style="display: none;") }}
                     </div>
 
                     <div class="upload-card">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+                        </svg>
                         <h3>Payment Proof</h3>
+                        <p>Upload the screenshot of your UPI/Bank transaction</p>
                         <input type="file" id="payment-upload" name="payment" accept="image/*" class="file-input">
-                        <label for="payment-upload" class="file-label">Choose Payment Screenshot</label>
+                        <label for="payment-upload" class="file-label">Choose Screenshot</label>
                         <div class="progress-container" style="display: none;">
                             <progress id="payment-progress" value="0" max="100"></progress>
                             <span id="payment-progress-text">0%</span>
                         </div>
-                        <img id="payment-preview" src="" style="display:none; width: 120px; margin-top: 10px;" />
+                        <img id="payment-preview" src="" style="display:none;" />
                         {{ form.payment_path(id="payment_path", style="display: none;") }}
                     </div>
                 </div>
 
-                <button type="submit" class="submit-btn">
-                    Complete Registration
-                    <span class="loading-dots"></span>
-                </button>
+                <div class="form-actions">
+                    <button type="submit" class="submit-btn">
+                        <span>Complete Registration</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 18px; height: 18px;">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                        </svg>
+                        <span class="loading-dots"></span>
+                    </button>
+                    <a href="/" class="btn secondary-btn reset-btn">Reset Form</a>
+                </div>
             </form>
         </section>
 
-        <section class="payment-info">
-            <div class="payment-card">
-                <h3>Payment Instructions</h3>
-                <div class="qr-container">
-                    <img src="{{ url_for('static', filename='images/payment_qr.png') }}" alt="Payment QR Code"
-                        class="payment-qr">
-                    <a href="{{ url_for('static', filename='images/payment_qr.png') }}" target="_blank"
-                        class="qr-enlarge">
-                        View Larger
+        <!-- Right Column: Sidebar (Dynamic Live Ticket Preview & Payment Card) -->
+        <aside class="sidebar-column">
+            <!-- Ticket Preview Card Wrapper -->
+            <div class="sidebar-card ticket-preview-card-wrapper">
+                <h3 class="sidebar-card-title">Live Pass Preview</h3>
+                
+                <div class="ticket-preview-card">
+                    <div class="ticket-main">
+                        <div class="ticket-header">
+                            <div class="ticket-event-title" id="preview-pass-title">{{ event_title | upper }}</div>
+                            <div class="ticket-event-subtitle" id="preview-pass-subtitle">{{ event_subtitle | upper }}</div>
+                        </div>
+                        <div class="ticket-divider-horizontal"></div>
+                        <div class="ticket-body">
+                            <div class="ticket-photo-container">
+                                <img id="preview-pass-photo" src="" class="ticket-photo" style="display: none;">
+                                <div id="preview-pass-photo-placeholder" class="ticket-photo-placeholder">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                    </svg>
+                                    <span>NO PHOTO</span>
+                                </div>
+                            </div>
+                            <div class="ticket-details">
+                                <div class="ticket-field">
+                                    <div class="ticket-field-label">NAME</div>
+                                    <div id="preview-pass-name" class="ticket-field-value">-</div>
+                                </div>
+                                <div class="ticket-field">
+                                    <div class="ticket-field-label">ROLL NUMBER</div>
+                                    <div id="preview-pass-roll" class="ticket-field-value">-</div>
+                                </div>
+                                <div class="ticket-field-row">
+                                    <div class="ticket-field" style="width: 50%;">
+                                        <div class="ticket-field-label">DEPARTMENT</div>
+                                        <div id="preview-pass-dept" class="ticket-field-value">-</div>
+                                    </div>
+                                    <div class="ticket-field" style="width: 50%;">
+                                        <div class="ticket-field-label">PHONE</div>
+                                        <div id="preview-pass-phone" class="ticket-field-value">-</div>
+                                    </div>
+                                </div>
+                                <div class="ticket-field">
+                                    <div class="ticket-field-label">COLLEGE</div>
+                                    <div id="preview-pass-college" class="ticket-field-value">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ticket-footer-text">Bring this placard to the event for entry</div>
+                    </div>
+                    <div class="ticket-perforation"></div>
+                    <div class="ticket-stub">
+                        <div class="ticket-badge">ATTENDEE</div>
+                        <div class="ticket-qr-container">
+                            <!-- Placeholder QR icon — real QR generated on the final placard -->
+                            <div class="ticket-qr-placeholder" id="preview-pass-qr">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 3.75 9.375v-4.5ZM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5ZM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5Z" />
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.375 7.125a.375.375 0 1 1 .75 0 .375.375 0 0 1-.75 0ZM6.375 16.875a.375.375 0 1 1 .75 0 .375.375 0 0 1-.75 0ZM16.125 7.125a.375.375 0 1 1 .75 0 .375.375 0 0 1-.75 0ZM13.5 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5Z" />
+                                </svg>
+                                <span>SCAN AT ENTRY</span>
+                            </div>
+                        </div>
+                        <div class="ticket-stub-details">
+                            <div class="ticket-field-label">TICKET ID</div>
+                            <div id="preview-pass-ticket-id" class="ticket-field-value">-</div>
+                        </div>
+                        <div class="ticket-date" id="preview-pass-date">{{ event_date | upper }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment Instructions Card -->
+            <div class="sidebar-card payment-card">
+                <div class="payment-card-header">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" class="header-icon">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+                    </svg>
+                    <h3>Payment Instructions</h3>
+                </div>
+
+                <div class="fee-badge">
+                    <span class="fee-label">Registration Fee</span>
+                    <span class="fee-amount">{{ registration_fee }}</span>
+                </div>
+
+                <div class="qr-wrapper">
+                    <div class="qr-frame">
+                        <img src="{{ url_for('static', filename=payment_qr) }}" alt="Payment QR Code" class="payment-qr">
+                        <div class="qr-scan-line"></div>
+                    </div>
+                    <a href="{{ url_for('static', filename=payment_qr) }}" target="_blank" class="qr-zoom-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.637 10.637zM10.5 7.5v6m3-3h-6" />
+                        </svg>
+                        <span>Enlarge QR</span>
                     </a>
                 </div>
-                <p class="fee">Registration Fee: ₹500</p>
-                <p class="note">Complete payment before form submission</p>
+
+                <div class="payment-steps">
+                    <div class="step-item">
+                        <span class="step-number">1</span>
+                        <span class="step-text">Scan the QR using any UPI app</span>
+                    </div>
+                    <div class="step-item">
+                        <span class="step-number">2</span>
+                        <span class="step-text">Pay fee & take screenshot</span>
+                    </div>
+                    <div class="step-item">
+                        <span class="step-number">3</span>
+                        <span class="step-text">Upload payment proof below</span>
+                    </div>
+                </div>
             </div>
-        </section>
+        </aside>
     </main>
 
     <footer class="main-footer">
@@ -118,7 +260,16 @@
             <a href="#">Contact</a>
         </nav>
     </footer>
+
+    <!-- QR Code Modal -->
+    <div id="qr-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <button type="button" class="modal-close" id="modal-close-btn">&times;</button>
+            <img src="{{ url_for('static', filename=payment_qr) }}" alt="Enlarged QR Code" class="modal-qr-img">
+            <p class="modal-caption">Scan to pay registration fee</p>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
-
 </html>

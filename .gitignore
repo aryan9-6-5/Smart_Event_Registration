@@ -1,6 +1,17 @@
+# Virtual environments
 venv/
+.venv/
+env/
+
+# Secrets and environment variables
 .env
 *.env
+
+# Local SQLite databases
+*.db
+*.sqlite3
+
+# Python cache and temporary files
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,11 +19,21 @@ __pycache__/
 *.tmp
 *.swp
 *.bak
-students.db
-static/uploads/profiles/
-static/uploads/payments/
-static/placards/
-static/tickets/
-test_*.py
+
+# Temporary file uploads & generated user assets
+static/uploads/tmp/
+static/uploads/profiles/*
+!static/uploads/profiles/test_profile.jpg
+static/uploads/payments/*
+!static/uploads/payments/test_payment.jpg
+static/placards/*
+static/tickets/*
+
+# Editor configurations
 .vscode/
-fonts/
+.idea/
+.gemini/
+
+# System files
+.DS_Store
+Thumbs.db
