@@ -262,25 +262,30 @@ def configure_tesseract():
 TESSERACT_CMD = configure_tesseract()
 
 def extract_transaction_id(image_path):
+    """Return (candidate, confident). Only a 12-digit UPI UTR is 'confident' (auto-trustable)."""
     try:
         text = pytesseract.image_to_string(Image.open(image_path))
-        print("OCR Output:", text)
 
-        patterns = [
-            r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*Ref|UTR)[^\w]?:?\s*([A-Za-z0-9]{6,50})",
-            r"\b(\d{12})\b",                                 # UPI UTR 12 numeric digits
-            r"\b([A-Za-z0-9]{8,25})\b"                       # General transaction ref fallback
-        ]
-
-        for pattern in patterns:
+        labelled_utr = r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*(?:Ref|Transaction)[^\w]*(?:ID|No)?|UTR)[^\w]*(\d{12})\b"
+        for pattern in (labelled_utr, r"\b(\d{12})\b"):
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
-                return match.group(1).strip()
+                return match.group(1), True
+
+        # Loose fallbacks are never trusted: caller must route these to manual review
+        fallbacks = [
+            r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*Ref|UTR)[^\w]?:?\s*([A-Za-z0-9]{6,50})",
+            r"\b([A-Za-z0-9]{8,25})\b"
+        ]
+        for pattern in fallbacks:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip(), False
 
     except Exception as e:
         print("OCR error:", e)
 
-    return None
+    return None, False
 
 def compute_image_phash(image_path):
     """Compute 64-bit difference hash (dHash) string using Pillow."""
@@ -809,7 +814,8 @@ def upload_file():
         payment_phash = None
         # OCR and perceptual hash only for payment screenshots
         if kind == 'payment':
-            trans_id = extract_transaction_id(filepath)
+            candidate, confident = extract_transaction_id(filepath)
+            trans_id = candidate if confident else None  # only trusted OCR results are stored
             payment_phash = compute_image_phash(filepath)
             print(f"OCR extracted Transaction ID: {trans_id}, phash: {payment_phash}")
 
@@ -870,11 +876,17 @@ def success_page(public_token):
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
 
+def safe_next_url(target):
+    """Allow only same-site relative paths as post-login redirect targets."""
+    if target and target.startswith('/') and not target.startswith('//') and '\\' not in target:
+        return target
+    return None
+
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('admin_logged_in'):
-            return redirect(url_for('admin_login', next=request.url))
+            return redirect(url_for('admin_login', next=request.full_path.rstrip('?')))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -886,8 +898,7 @@ def admin_login():
         password = request.form.get('password')
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
-            next_url = request.args.get('next')
-            return redirect(next_url or url_for('admin_dashboard'))
+            return redirect(safe_next_url(request.args.get('next')) or url_for('admin_dashboard'))
         return render_template('admin_login.html', error="Invalid credentials"), 200
     return render_template('admin_login.html')
 
@@ -955,6 +966,7 @@ def admin_payment_proof(student_id):
         return send_file(os.path.abspath(row[0]))
 
 @app.route('/admin/checkin', methods=['GET', 'POST'])
+@limiter.exempt  # gate scanners must never be throttled; access is already admin-authenticated
 @admin_required
 def admin_checkin():
     if request.method == 'GET':

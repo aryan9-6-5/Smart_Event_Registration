@@ -38,6 +38,10 @@ def isolate_db_and_smtp(test_env, monkeypatch):
     # Initialize DB in the test database
     flask_app.init_db()
 
+    # Reset in-memory abuse state so one test's failures never block the next
+    flask_app.ABUSE_TRACKER.clear()
+    flask_app.FLAGGED_IPS.clear()
+
     # Clear tables between tests for isolation
     with test_env["patched_connect"](test_env["temp_db"]) as conn:
         conn.execute("DELETE FROM students")
