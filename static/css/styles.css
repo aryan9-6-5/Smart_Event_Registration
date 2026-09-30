@@ -1328,15 +1328,21 @@ body {
 /* Payment amount feedback under the payment upload card */
 .upload-note {
     margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
     font-size: 0.85rem;
     font-weight: 500;
     line-height: 1.4;
+    text-align: left;
 }
 
+/* Own background so the text stays readable on the dark "uploaded" card as well as a light one */
 .upload-note.note-ok {
+    background: var(--ok-bg);
     color: var(--ok-text);
 }
 
 .upload-note.note-warn {
+    background: var(--pending-bg);
     color: var(--pending-text);
 }
