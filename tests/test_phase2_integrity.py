@@ -100,7 +100,7 @@ def test_server_controlled_trans_id_overrides_client(client):
 
     # Simulate OCR having extracted a valid UPI UTR
     with sqlite3.connect('students.db') as conn:
-        conn.execute("UPDATE uploads SET ocr_trans_id = '987654321098' WHERE token = ?", (pay_token,))
+        conn.execute("UPDATE uploads SET ocr_trans_id = '987654321098', amount_paid = '500' WHERE token = ?", (pay_token,))
 
     # Client tries to tamper with trans_id in POST body
     data = {
@@ -225,8 +225,8 @@ def test_duplicate_payment_screenshot_flagged_as_pending(client):
 
     # Both simulated as having valid OCR extracted IDs (so otherwise they would be CONFIRMED)
     with sqlite3.connect('students.db') as conn:
-        conn.execute("UPDATE uploads SET ocr_trans_id = '111122223333' WHERE token = ?", (pay1,))
-        conn.execute("UPDATE uploads SET ocr_trans_id = '444455556666' WHERE token = ?", (pay2,))
+        conn.execute("UPDATE uploads SET ocr_trans_id = '111122223333', amount_paid = '500' WHERE token = ?", (pay1,))
+        conn.execute("UPDATE uploads SET ocr_trans_id = '444455556666', amount_paid = '500' WHERE token = ?", (pay2,))
 
     # First student registers with pay1
     resp1 = client.post('/', data={

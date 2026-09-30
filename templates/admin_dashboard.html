@@ -102,6 +102,10 @@
             font-weight: 600;
         }
         .badge-pending { background: var(--pending-bg); color: var(--pending-text); }
+        .badge-amt-exact { background: var(--ok-bg); color: var(--ok-text); }
+        .badge-amt-under, .badge-amt-over { background: var(--bad-bg); color: var(--bad-text); }
+        .badge-amt-unread { background: var(--pending-bg); color: var(--pending-text); }
+        .badge-amt-unchecked { background: var(--bg); color: var(--muted); }
         .badge-confirmed { background: var(--ok-bg); color: var(--ok-text); }
         .badge-rejected { background: var(--bad-bg); color: var(--bad-text); }
         .badge-ocr { background: var(--bg); color: var(--text); }
@@ -194,6 +198,7 @@
                         <th>Roll Number</th>
                         <th>Email / Phone</th>
                         <th>Transaction ID</th>
+                        <th>Amount</th>
                         <th>Status</th>
                         <th>Checked In</th>
                         <th>Email</th>
@@ -206,6 +211,7 @@
                         <td>{{ s.roll_number }}</td>
                         <td>{{ s.email }}<br><small>{{ s.phone }}</small></td>
                         <td>{{ s.trans_id }}</td>
+                        <td>{% if s.amount_status %}<span class="badge badge-amt-{{ s.amount_status }}">{{ s.amount_status }}</span><br><small>{{ s.amount_paid or '—' }} of {{ s.amount_expected or '—' }}</small>{% else %}—{% endif %}</td>
                         <td>
                             <span class="badge badge-{{ s.status|lower }}">{{ s.status }}</span>
                         </td>
@@ -246,7 +252,9 @@
                         <th>Roll Number</th>
                         <th>Contact</th>
                         <th>Transaction ID</th>
+                        <th>Amount</th>
                         <th>Source</th>
+                        <th>Why review</th>
                         <th>Proof</th>
                         <th>Actions</th>
                     </tr>
@@ -258,9 +266,11 @@
                         <td>{{ p.roll_number }}</td>
                         <td>{{ p.email }}<br><small>{{ p.phone }}</small></td>
                         <td><code>{{ p.trans_id }}</code></td>
+                        <td>{% if p.amount_status %}<span class="badge badge-amt-{{ p.amount_status }}">{{ p.amount_status }}</span><br><small>{{ p.amount_paid or '—' }} of {{ p.amount_expected or '—' }}</small>{% else %}—{% endif %}</td>
                         <td>
                             <span class="badge badge-{{ p.trans_id_source|lower }}">{{ p.trans_id_source }}</span>
                         </td>
+                        <td><small>{{ p.review_reason or '—' }}</small></td>
                         <td>
                             <a href="{{ url_for('admin_payment_proof', student_id=p.id) }}" target="_blank" class="btn-sm btn-view">View Proof</a>
                         </td>

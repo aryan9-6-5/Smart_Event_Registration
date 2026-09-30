@@ -99,6 +99,22 @@ function uploadErrorMessage(xhr) {
     return 'Upload failed. Please try again.';
 }
 
+// Server feedback about the payment amount, shown under the payment card
+function showUploadNote(uploadCard, message, status) {
+    if (!uploadCard) return;
+    let note = uploadCard.querySelector('.upload-note');
+    if (!message) {
+        if (note) note.remove();
+        return;
+    }
+    if (!note) {
+        note = document.createElement('div');
+        uploadCard.appendChild(note);
+    }
+    note.className = 'upload-note ' + (status === 'exact' ? 'note-ok' : 'note-warn');
+    note.textContent = message;
+}
+
 function handleFileUpload(fileInput, progressBar, progressText, pathField, type) {
     const original = fileInput.files[0];
     if (!original) return;
@@ -201,6 +217,7 @@ function startUpload(fileInput, progressBar, progressText, pathField, type, file
                     transGroup.style.display = 'block';
                     transGroup.classList.add('visible');
                 }
+                showUploadNote(uploadCard, response.amount_message, response.amount_status);
             }
 
             progressText.textContent = 'Upload complete!';

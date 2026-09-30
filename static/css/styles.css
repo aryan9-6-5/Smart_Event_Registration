@@ -1324,3 +1324,19 @@ body {
     height: 100%;
     object-fit: cover;
 }
+
+/* Payment amount feedback under the payment upload card */
+.upload-note {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.upload-note.note-ok {
+    color: var(--ok-text);
+}
+
+.upload-note.note-warn {
+    color: var(--pending-text);
+}

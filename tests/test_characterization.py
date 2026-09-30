@@ -38,7 +38,7 @@ def test_full_registration_happy_path(client, monkeypatch):
 
     # 2. Upload payment image (mock OCR return value to avoid dependency on tesseract.exe in tests)
     import app
-    monkeypatch.setattr(app, 'extract_transaction_id', lambda p: ('123456789012', True))
+    monkeypatch.setattr(app, 'extract_transaction_id', lambda p, text=None: ('123456789012', True))
 
     payment_resp = client.post('/upload', data={
         'file': (create_in_memory_image(), 'payment.png'),

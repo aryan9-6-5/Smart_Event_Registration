@@ -24,6 +24,7 @@ from wtforms import StringField, EmailField
 from wtforms.validators import DataRequired, Email, Length, Regexp
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
+from decimal import Decimal, InvalidOperation
 import pytesseract
 from PIL import Image
 import re
@@ -274,10 +275,86 @@ def configure_tesseract():
 
 TESSERACT_CMD = configure_tesseract()
 
-def extract_transaction_id(image_path):
+def read_image_text(image_path):
+    """OCR an image once; returns '' when OCR is unavailable or fails."""
+    try:
+        with Image.open(image_path) as img:
+            return pytesseract.image_to_string(img) or ''
+    except Exception as e:
+        print("OCR error:", e)
+        return ''
+
+# ─── Payment amount verification ──────────────────────────────────────────────
+def parse_amount(value):
+    """'₹1,500.50' / 'Rs. 250' / 750 -> Decimal, or None when no number is present."""
+    if value is None:
+        return None
+    match = re.search(r'\d[\d,]*(?:\.\d{1,2})?', str(value))
+    if not match:
+        return None
+    try:
+        return Decimal(match.group(0).replace(',', ''))
+    except InvalidOperation:
+        return None
+
+def get_expected_fee():
+    """Registration fee as a Decimal from event_config.json ('fee_amount' wins over the 'fee' display string)."""
+    config = get_event_config()
+    return parse_amount(config.get('fee_amount', config.get('fee')))
+
+def fee_display():
+    """Fee as shown to users, e.g. '₹500' (taken from config, never hardcoded)."""
+    return str(get_event_config().get('fee', ''))
+
+_AMOUNT = r'(\d[\d,]*(?:\.\d{1,2})?)'
+# OCR frequently misreads the rupee sign as %, € or ¥, so those count as currency markers too
+_AMOUNT_PATTERNS = [
+    re.compile(r'(?:₹|\brs\b\.?|\binr\b|[€¥%])\s*' + _AMOUNT, re.IGNORECASE),
+    re.compile(r'\b(?:amount|paid|paying|sent|total)\b[^\d\n]{0,20}' + _AMOUNT, re.IGNORECASE),
+    re.compile(r'^\s*[^\w\s]?\s*' + _AMOUNT + r'\s*$', re.MULTILINE),  # big amount alone on its line
+]
+
+def extract_amounts(text):
+    """Candidate payment amounts found in OCR text, most reliable pattern first, de-duplicated."""
+    found = []
+    for pattern in _AMOUNT_PATTERNS:
+        for match in pattern.finditer(text or ''):
+            raw = match.group(1)
+            if len(raw.split('.')[0].replace(',', '')) > 7:  # transaction ids / phone numbers, not money
+                continue
+            value = parse_amount(raw)
+            if value is not None and value > 0 and value not in found:
+                found.append(value)
+    return found
+
+def classify_amount(candidates, expected):
+    """Return (paid, status): exact / over / under / unread, or unchecked when no fee is configured."""
+    if expected is None:
+        return (candidates[0] if candidates else None), 'unchecked'
+    if not candidates:
+        return None, 'unread'
+    if expected in candidates:
+        return expected, 'exact'
+    paid = candidates[0]
+    return paid, ('over' if paid > expected else 'under')
+
+def amount_message(paid, status):
+    """Plain-language feedback shown to the student right after the payment upload."""
+    fee = fee_display()
+    symbol = re.match(r'^\D*', fee).group(0).strip()
+    if status == 'exact':
+        return f"Payment amount verified ({fee})."
+    if status in ('over', 'under'):
+        return f"We read {symbol}{paid} but the fee is {fee}. Your registration will be held for manual review."
+    if status == 'unread':
+        return "We couldn't read the amount from this screenshot. Your registration will be held for manual review."
+    return ""
+
+def extract_transaction_id(image_path, text=None):
     """Return (candidate, confident). Only a 12-digit UPI UTR is 'confident' (auto-trustable)."""
     try:
-        text = pytesseract.image_to_string(Image.open(image_path))
+        if text is None:
+            text = pytesseract.image_to_string(Image.open(image_path))
 
         labelled_utr = r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*(?:Ref|Transaction)[^\w]*(?:ID|No)?|UTR)[^\w]*(\d{12})\b"
         for pattern in (labelled_utr, r"\b(\d{12})\b"):
@@ -461,7 +538,11 @@ def init_db():
             ('payment_phash', "TEXT", "CREATE INDEX IF NOT EXISTS idx_students_phash ON students(payment_phash)"),
             ('email_status', "TEXT DEFAULT 'pending'", None),
             ('checked_in_at', "TIMESTAMP", None),
-            ('ticket_secret', "TEXT", None)
+            ('ticket_secret', "TEXT", None),
+            ('amount_paid', "TEXT", None),
+            ('amount_expected', "TEXT", None),
+            ('amount_status', "TEXT", None),
+            ('review_reason', "TEXT", None)
         ]
 
         for col_name, col_def, idx_sql in additive_columns:
@@ -495,12 +576,13 @@ def init_db():
 
         cursor.execute("PRAGMA table_info(uploads)")
         upload_cols = [row[1] for row in cursor.fetchall()]
-        if 'payment_phash' not in upload_cols:
-            try:
-                cursor.execute("ALTER TABLE uploads ADD COLUMN payment_phash TEXT")
-                conn.commit()
-            except Exception as e:
-                print(f"Error adding payment_phash to uploads: {e}")
+        for upload_col in ('payment_phash', 'amount_paid'):
+            if upload_col not in upload_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE uploads ADD COLUMN {upload_col} TEXT")
+                    conn.commit()
+                except Exception as e:
+                    print(f"Error adding {upload_col} to uploads: {e}")
 
 # def generate_placard(name, roll, dept, college, phone, profile_path):
 #     placard = Image.new('RGB', (1200, 800), '#ffffff')
@@ -847,18 +929,23 @@ def upload_file():
     try:
         trans_id = None
         payment_phash = None
+        amount_paid = None
+        amount_status = None
         # OCR and perceptual hash only for payment screenshots
         if kind == 'payment':
-            candidate, confident = extract_transaction_id(filepath)
+            ocr_text = read_image_text(filepath)
+            candidate, confident = extract_transaction_id(filepath, text=ocr_text)
             trans_id = candidate if confident else None  # only trusted OCR results are stored
+            paid, amount_status = classify_amount(extract_amounts(ocr_text), get_expected_fee())
+            amount_paid = str(paid) if paid is not None else None
             payment_phash = compute_image_phash(filepath)
-            print(f"OCR extracted Transaction ID: {trans_id}, phash: {payment_phash}")
+            print(f"OCR extracted Transaction ID: {trans_id}, amount: {amount_paid} ({amount_status}), phash: {payment_phash}")
 
         with sqlite3.connect('students.db') as conn:
             conn.execute('''
-                INSERT INTO uploads (token, kind, stored_name, ocr_trans_id, payment_phash)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (token, kind, filename, trans_id, payment_phash))
+                INSERT INTO uploads (token, kind, stored_name, ocr_trans_id, payment_phash, amount_paid)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (token, kind, filename, trans_id, payment_phash, amount_paid))
 
         response_data = {
             'message': 'File uploaded successfully',
@@ -866,13 +953,14 @@ def upload_file():
         }
         if kind == 'payment':
             response_data['trans_id'] = trans_id or ""
+            response_data['amount_status'] = amount_status
+            response_data['amount_message'] = amount_message(paid, amount_status)
 
         return jsonify(response_data), 200
 
     except Exception as e:
-        error_msg = f"Failed to record upload: {str(e)}"
-        print(error_msg)
-        return jsonify({'error': error_msg}), 500
+        app.logger.exception("Failed to record upload: %s", e)
+        return jsonify({'error': 'Failed to record upload. Please try again.'}), 500
 
 
 @app.route('/placard/<public_token>', methods=['GET'])
@@ -972,7 +1060,8 @@ def admin_dashboard():
 
         # Pending students awaiting verification
         cur.execute('''
-            SELECT id, name, roll_number, email, phone, trans_id, ocr_trans_id, trans_id_source, created_at
+            SELECT id, name, roll_number, email, phone, trans_id, ocr_trans_id, trans_id_source, created_at,
+                   amount_paid, amount_expected, amount_status, review_reason
             FROM students
             WHERE status = 'PENDING'
             ORDER BY id DESC
@@ -991,7 +1080,8 @@ def admin_dashboard():
         stats = cur.fetchone()
 
         # Registrations list: search results when a query is given, else the (optionally filtered) latest entries
-        columns = "id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at, email_status"
+        columns = ("id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at, email_status, "
+                   "amount_paid, amount_expected, amount_status")
         if q:
             cur.execute(f'''
                 SELECT {columns} FROM students
@@ -1195,7 +1285,7 @@ def index():
                 if not row_prof:
                     return render_template('index.html', form=form, error="Profile photo upload is invalid or expired. Please re-upload.")
                 
-                cursor.execute("SELECT stored_name, ocr_trans_id, payment_phash FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
+                cursor.execute("SELECT stored_name, ocr_trans_id, payment_phash, amount_paid FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
                 row_pay = cursor.fetchone()
                 if not row_pay:
                     return render_template('index.html', form=form, error="Payment proof upload is invalid or expired. Please re-upload.")
@@ -1204,6 +1294,7 @@ def index():
             stored_payment = row_pay[0]
             ocr_trans_id = row_pay[1]
             payment_phash = row_pay[2]
+            amount_paid_stored = row_pay[3]
 
             profile_tmp_path = os.path.join(STORAGE_TMP, stored_profile)
             payment_tmp_path = os.path.join(STORAGE_TMP, stored_payment)
@@ -1245,6 +1336,27 @@ def index():
             
             final_trans_id = final_trans_id.upper()  # UNIQUE(trans_id) must be case-insensitive
 
+            # Verify the paid amount against the CURRENT fee (the organizer may have changed it since the upload)
+            expected_fee = get_expected_fee()
+            paid_amount = parse_amount(amount_paid_stored)
+            _, amount_status = classify_amount([paid_amount] if paid_amount is not None else [], expected_fee)
+
+            # Anything the server cannot fully verify is held for a human
+            review_reasons = []
+            if is_duplicate_payment:
+                review_reasons.append('duplicate screenshot')
+            if trans_id_source == 'manual':
+                review_reasons.append('transaction ID typed manually')
+            if amount_status == 'under':
+                review_reasons.append('underpaid')
+            elif amount_status == 'over':
+                review_reasons.append('overpaid')
+            elif amount_status == 'unread':
+                review_reasons.append('amount not readable')
+            if review_reasons:
+                student_status = 'PENDING'
+            review_reason = ', '.join(review_reasons)
+
             # Destination files in private storage
             roll_number_clean = form.roll_number.data.strip().upper()
             profile_ext = os.path.splitext(stored_profile)[1] or ".png"
@@ -1265,15 +1377,19 @@ def index():
                         INSERT INTO students 
                         (name, email, roll_number, dept_name, college_name, 
                          trans_id, phone, profile_path, payment_path, placard_path, public_token,
-                         status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret,
+                         amount_paid, amount_expected, amount_status, review_reason)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ''', (
                         form.name.data, form.email.data, roll_number_clean,
                         form.dept_name.data, form.college_name.data,
                         final_trans_id, form.phone.data,
                         final_profile_path, final_payment_path, None,
                         public_token,
-                        student_status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret
+                        student_status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret,
+                        str(paid_amount) if paid_amount is not None else None,
+                        str(expected_fee) if expected_fee is not None else None,
+                        amount_status, review_reason
                     ))
                     student_id = cursor.lastrowid
 
