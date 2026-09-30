@@ -69,5 +69,20 @@ def test_rate_limiter_blocks_excessive_requests(client):
         flask_app.app.config["RATELIMIT_ENABLED"] = False
         flask_app.limiter.enabled = False
 
+def test_wsgi_entrypoint_exists_and_exposes_application():
+    """Test: wsgi.py exists and exposes application callable."""
+    import importlib.util
+
+    wsgi_path = os.path.join(os.path.dirname(__file__), "..", "wsgi.py")
+    assert os.path.exists(wsgi_path), "wsgi.py entrypoint is missing"
+
+    spec = importlib.util.spec_from_file_location("wsgi", wsgi_path)
+    wsgi_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wsgi_mod)
+
+    assert hasattr(wsgi_mod, "application")
+    assert callable(wsgi_mod.application)
+
+
 
 

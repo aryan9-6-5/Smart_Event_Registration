@@ -6,3 +6,5 @@ python-dotenv==1.0.1
 Pillow==10.2.0
 qrcode==7.4.2
 pytesseract==0.3.10
+flask-limiter>=3.0.0
+waitress>=3.0.0
