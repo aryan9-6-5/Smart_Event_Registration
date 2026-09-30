@@ -271,4 +271,76 @@ def test_duplicate_payment_screenshot_flagged_as_pending(client):
         assert s2_status == 'PENDING'
         assert s2_phash == s1_phash
 
+def test_signed_qr_payload_generation_and_verification(app):
+    """Test: sign_ticket produces an HMAC signed payload and verify_ticket_signature validates it."""
+    import app as flask_app
+
+    ticket_id = "TECH24-ROLL001"
+    secret = "random_ticket_secret_123"
+
+    signed_payload = flask_app.sign_ticket(ticket_id, ticket_secret=secret)
+    assert signed_payload.startswith("TECH24-ROLL001.")
+    parts = signed_payload.split('.')
+    assert len(parts) == 2
+    assert len(parts[1]) == 16  # 16-char hex truncated hmac
+
+    # Authentic payload verification passes
+    is_valid, extracted_id = flask_app.verify_ticket_signature(signed_payload, ticket_secret=secret)
+    assert is_valid is True
+    assert extracted_id == ticket_id
+
+    # Forged signature fails
+    forged_payload = f"{ticket_id}.0123456789abcdef"
+    is_valid, _ = flask_app.verify_ticket_signature(forged_payload, ticket_secret=secret)
+    assert is_valid is False
+
+    # Wrong secret fails
+    is_valid, _ = flask_app.verify_ticket_signature(signed_payload, ticket_secret="wrong_secret")
+    assert is_valid is False
+
+    # Tampered ticket ID fails
+    tampered_payload = f"TECH24-ROLL999.{parts[1]}"
+    is_valid, _ = flask_app.verify_ticket_signature(tampered_payload, ticket_secret=secret)
+    assert is_valid is False
+
+def test_registration_generates_and_stores_ticket_secret(client):
+    """Test: When a student registers, ticket_secret is securely generated and persisted in the database."""
+    import io
+    from PIL import Image
+
+    def get_token(kind):
+        buf = io.BytesIO()
+        img = Image.new('RGB', (100, 100), color='cyan')
+        img.save(buf, 'PNG')
+        buf.seek(0)
+        resp = client.post('/upload', data={'file': (buf, f'{kind}.png'), 'type': kind}, content_type='multipart/form-data')
+        return resp.get_json()['token']
+
+    prof = get_token('profile')
+    pay = get_token('payment')
+
+    data = {
+        'name': 'Signed QR Student',
+        'email': 'qr@example.com',
+        'roll_number': 'QRSEC001',
+        'dept_name': 'CSE',
+        'college_name': 'Engineering College',
+        'trans_id': 'TXNQRSEC001',
+        'phone': '9876543210',
+        'profile_token': prof,
+        'payment_token': pay
+    }
+    resp = client.post('/', data=data, follow_redirects=False)
+    assert resp.status_code == 302
+
+    with sqlite3.connect('students.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ticket_secret FROM students WHERE roll_number = 'QRSEC001'")
+        row = cursor.fetchone()
+        assert row is not None
+        ticket_secret = row[0]
+        assert ticket_secret is not None
+        assert len(ticket_secret) >= 16
+
+
 

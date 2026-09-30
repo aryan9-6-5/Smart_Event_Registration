@@ -7,6 +7,8 @@ import secrets
 import time
 import json
 import shutil
+import hmac
+import hashlib
 from datetime import datetime
 from collections import defaultdict
 from email.message import EmailMessage
@@ -224,6 +226,25 @@ def hamming_distance(hash1_hex, hash2_hex):
         return (val1 ^ val2).bit_count()
     except Exception:
         return 64
+
+def sign_ticket(ticket_id, ticket_secret=None):
+    """Cryptographically sign a ticket ID using HMAC-SHA256."""
+    server_key = app.config.get('SECRET_KEY', 'default-key')
+    combined_key = f"{server_key}:{ticket_secret or ''}".encode()
+    sig = hmac.new(combined_key, ticket_id.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{ticket_id}.{sig}"
+
+def verify_ticket_signature(qr_payload, ticket_secret=None):
+    """Verify cryptographic signature on a scanned QR payload."""
+    if not qr_payload or '.' not in qr_payload:
+        return False, None
+    ticket_id, provided_sig = qr_payload.rsplit('.', 1)
+    expected_payload = sign_ticket(ticket_id, ticket_secret)
+    expected_sig = expected_payload.rsplit('.', 1)[1]
+    if hmac.compare_digest(provided_sig, expected_sig):
+        return True, ticket_id
+    return False, None
+
 # Create test images if they don't exist
 def ensure_test_images():
     if not os.path.exists(TEST_PROFILE_PATH):
@@ -430,7 +451,7 @@ def init_db():
 #     placard.save(placard_path)
 #     return placard_path
 
-def generate_placard(name, roll, dept, college, phone, profile_path):
+def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secret=None):
     config = get_event_config()
     # Define theme colors matching the user's CSS variables
     COLOR_PRIMARY = '#1A2A45'       # Rich navy blue for primary text
@@ -548,8 +569,9 @@ def generate_placard(name, roll, dept, college, phone, profile_path):
     draw.rounded_rectangle([(770, 70), (930, 110)], radius=20, fill=COLOR_SOFT_BG)
     draw.text((850, 90), "ATTENDEE", fill=COLOR_PRIMARY, font=font_badge, anchor='mm')
 
-    # QR Code generation
-    qr_data = f"{config['ticket_prefix']}{roll}"
+    # QR Code generation with cryptographic signature
+    ticket_id = f"{config['ticket_prefix']}{roll}"
+    qr_data = sign_ticket(ticket_id, ticket_secret=ticket_secret)
     qr_img = qrcode.make(qr_data)
     qr_path = os.path.join(STORAGE_TICKETS, f"ticket_{roll}.png")
     os.makedirs(os.path.dirname(qr_path), exist_ok=True)
@@ -846,8 +868,9 @@ def index():
             final_profile_path = os.path.join(STORAGE_PROFILES, f"{roll_number_clean}_profile{profile_ext}")
             final_payment_path = os.path.join(STORAGE_PAYMENTS, f"{roll_number_clean}_payment{payment_ext}")
             
-            # Generate unguessable public token for attendee
+            # Generate unguessable public token and unique ticket secret for attendee
             public_token = uuid.uuid4().hex
+            ticket_secret = secrets.token_hex(16)
 
             # 1. Atomic reservation via single transaction INSERT
             try:
@@ -857,15 +880,15 @@ def index():
                         INSERT INTO students 
                         (name, email, roll_number, dept_name, college_name, 
                          trans_id, phone, profile_path, payment_path, placard_path, public_token,
-                         status, ocr_trans_id, trans_id_source, payment_phash)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ''', (
                         form.name.data, form.email.data, roll_number_clean,
                         form.dept_name.data, form.college_name.data,
                         final_trans_id, form.phone.data,
                         final_profile_path, final_payment_path, None,
                         public_token,
-                        student_status, ocr_trans_id, trans_id_source, payment_phash
+                        student_status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret
                     ))
                     student_id = cursor.lastrowid
             except sqlite3.IntegrityError as e:
@@ -878,14 +901,15 @@ def index():
 
             placard_path = None
             try:
-                # 2. Generate placard using the temp profile photo
+                # 2. Generate placard using the temp profile photo and signed QR code
                 placard_path = generate_placard(
                     form.name.data,
                     roll_number_clean,
                     form.dept_name.data,
                     form.college_name.data,
                     form.phone.data,
-                    profile_tmp_path
+                    profile_tmp_path,
+                    ticket_secret=ticket_secret
                 )
                 
                 # 3. Update placard_path on the student row
