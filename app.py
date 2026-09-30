@@ -351,7 +351,8 @@ class RegistrationForm(FlaskForm):
     ])
     roll_number = StringField('Roll Number', validators=[
         DataRequired(message="Roll number is required."),
-        Length(min=2, max=20, message="Roll number must be between 2 and 20 characters.")
+        Length(min=2, max=20, message="Roll number must be between 2 and 20 characters."),
+        Regexp(r'^[A-Za-z0-9_-]+$', message="Roll number may only contain letters, digits, hyphen and underscore.")
     ])
     dept_name = StringField('Department', validators=[
         DataRequired(message="Department name is required."),
