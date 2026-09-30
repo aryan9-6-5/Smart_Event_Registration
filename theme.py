@@ -175,9 +175,21 @@ def prepare_banner(theme_data, dest=None):
     """Process theme['banner'] into the static dir. Returns the static-relative URL path or None."""
     banner = theme_data.get('banner')
     if not banner:
+        for default_name in ('theme/banner.jpg', 'theme/banner.jpeg', 'theme/banner.png', 'theme/cover.jpg', 'theme/cover.jpeg', 'theme/cover.png'):
+            if os.path.exists(os.path.join(BASE_DIR, default_name)):
+                banner = default_name
+                break
+    if not banner:
         return None
     dest = dest or os.path.join(BASE_DIR, BANNER_OUT_REL)
-    if process_banner(os.path.join(BASE_DIR, banner), dest):
+    src = os.path.join(BASE_DIR, banner)
+    if not os.path.exists(src):
+        base_no_ext, _ = os.path.splitext(src)
+        for alt_ext in ('.jpg', '.jpeg', '.png'):
+            if os.path.exists(base_no_ext + alt_ext):
+                src = base_no_ext + alt_ext
+                break
+    if os.path.exists(src) and process_banner(src, dest):
         return 'theme/banner.jpg'
     return None
 
@@ -247,7 +259,7 @@ def build_theme_from_banner(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Event theme tools')
     sub = parser.add_subparsers(dest='command', required=True)
-    fb = sub.add_parser('from-banner', help='derive theme/theme.json from a banner image')
+    fb = sub.add_parser('from-banner', help='derive theme/theme.json from a banner image (.jpg, .jpeg, or .png)')
     fb.add_argument('banner')
     fb.add_argument('--out', default=THEME_PATH)
     args = parser.parse_args(argv)
@@ -260,7 +272,7 @@ def main(argv=None):
         print(f"Wrote {args.out}")
         for key, value in data['colors'].items():
             print(f"  {key:<13}{value}")
-        print("Contrast checks passed. Place your banner at theme/banner.jpg (keep key content in the centre 60%).")
+        print(f"Contrast checks passed. Banner configured at: {data['banner']}.")
     return 0
 
 

@@ -2,14 +2,24 @@ import os
 import shutil
 import zipfile
 import json
+import sqlite3
 from datetime import datetime
 
 # Define directories to archive and clear
+# Current secure storage paths
+STORAGE_PROFILES = "storage/profiles"
+STORAGE_PAYMENTS = "storage/payments"
+STORAGE_TMP = "storage/tmp"
+STORAGE_PLACARDS = "storage/placards"
+STORAGE_TICKETS = "storage/tickets"
+
+# Legacy / public static directories
 UPLOADS_PROFILES = "static/uploads/profiles"
 UPLOADS_PAYMENTS = "static/uploads/payments"
 UPLOADS_TMP = "static/uploads/tmp"
 PLACARDS_DIR = "static/placards"
 TICKETS_DIR = "static/tickets"
+
 DB_FILE = "students.db"
 CONFIG_FILE = "event_config.json"
 BACKUP_DIR = "backups"
@@ -26,35 +36,59 @@ TEMPLATE_EVENT_CONFIG = {
 }
 
 def create_backup():
-    """Zips all student registration data (profiles, payments, tickets, placards, config, and db)."""
+    """Zips all student registration data (profiles, payments, tickets, placards, theme, config, and db)."""
     os.makedirs(BACKUP_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_path = os.path.join(BACKUP_DIR, f"retrieved_data_{timestamp}.zip")
     
     print(f"📦 Starting backup to {zip_path}...")
+
+    # Flush any SQLite WAL entries into the database before zipping
+    if os.path.exists(DB_FILE):
+        try:
+            with sqlite3.connect(DB_FILE, timeout=5) as conn:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except Exception as e:
+            print(f"   [INFO] WAL checkpoint skipped: {e}")
     
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        # 1. Add database file
-        if os.path.exists(DB_FILE):
-            zip_file.write(DB_FILE, os.path.basename(DB_FILE))
-            print(f"   + Added database: {DB_FILE}")
+        # 1. Add database file(s)
+        for db_related in [DB_FILE, f"{DB_FILE}-wal", f"{DB_FILE}-shm"]:
+            if os.path.exists(db_related):
+                zip_file.write(db_related, os.path.basename(db_related))
+                print(f"   + Added database file: {db_related}")
             
         # 2. Add current configuration file
         if os.path.exists(CONFIG_FILE):
             zip_file.write(CONFIG_FILE, os.path.basename(CONFIG_FILE))
             print(f"   + Added config: {CONFIG_FILE}")
+
+        # 3. Add theme configuration and custom banner assets
+        if os.path.exists("theme"):
+            for root, _, files in os.walk("theme"):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(file_path, "theme")
+                    zip_file.write(file_path, os.path.join("theme", rel_path))
+            print("   + Added theme configurations and banner assets")
             
-        # 3. Add directory contents
+        # 4. Add directory contents (both secure storage and static uploads)
         dirs_to_zip = {
-            UPLOADS_PROFILES: "profiles",
-            UPLOADS_PAYMENTS: "payments",
-            UPLOADS_TMP: "tmp_uploads",
-            PLACARDS_DIR: "placards",
-            TICKETS_DIR: "tickets"
+            STORAGE_PROFILES: "profiles",
+            STORAGE_PAYMENTS: "payments",
+            STORAGE_TMP: "tmp_uploads",
+            STORAGE_PLACARDS: "placards",
+            STORAGE_TICKETS: "tickets",
+            UPLOADS_PROFILES: "legacy_static_profiles",
+            UPLOADS_PAYMENTS: "legacy_static_payments",
+            UPLOADS_TMP: "legacy_static_tmp",
+            PLACARDS_DIR: "legacy_static_placards",
+            TICKETS_DIR: "legacy_static_tickets"
         }
         
         for dir_path, zip_subfolder in dirs_to_zip.items():
             if os.path.exists(dir_path):
+                file_count = 0
                 for root, _, files in os.walk(dir_path):
                     for file in files:
                         file_path = os.path.join(root, file)
@@ -62,22 +96,52 @@ def create_backup():
                         rel_path = os.path.relpath(file_path, dir_path)
                         zip_entry_name = os.path.join(zip_subfolder, rel_path)
                         zip_file.write(file_path, zip_entry_name)
-                print(f"   + Added files from: {dir_path}")
+                        file_count += 1
+                if file_count > 0:
+                    print(f"   + Added {file_count} files from: {dir_path}")
                 
     print(f"✅ Backup created successfully at {zip_path}\n")
     return zip_path
 
 def delete_database():
-    """Deletes the SQLite database file."""
-    if os.path.exists(DB_FILE):
-        try:
-            # We make sure connection is closed by removing the file directly
-            os.remove(DB_FILE)
-            print(f"🗑️ Deleted database: {DB_FILE}")
-        except Exception as e:
-            print(f"❌ Failed to delete database: {e}")
-    else:
+    """Deletes or cleanly resets the SQLite database file."""
+    if not os.path.exists(DB_FILE):
         print("ℹ️ Database does not exist, nothing to delete.")
+        return
+
+    # Checkpoint WAL first
+    try:
+        with sqlite3.connect(DB_FILE, timeout=5) as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:
+        pass
+
+    # Try removing the files directly
+    deleted = False
+    for db_related in [DB_FILE, f"{DB_FILE}-wal", f"{DB_FILE}-shm"]:
+        if os.path.exists(db_related):
+            try:
+                os.remove(db_related)
+                print(f"🗑️ Deleted database file: {db_related}")
+                deleted = True
+            except PermissionError:
+                # File is locked by a running process (e.g. Waitress). Wipe tables via SQL.
+                print(f"⚠️ {db_related} is locked by active server process; clearing all rows via SQL...")
+                try:
+                    with sqlite3.connect(DB_FILE, timeout=5) as conn:
+                        for tbl in ['students', 'uploads', 'abuse_attempts']:
+                            try:
+                                conn.execute(f"DELETE FROM {tbl}")
+                            except Exception:
+                                pass
+                        conn.execute("VACUUM")
+                        conn.commit()
+                    print(f"✅ Cleared all student and upload rows in {DB_FILE} via SQL.")
+                    deleted = True
+                except Exception as err:
+                    print(f"❌ Failed to clear database via SQL: {err}")
+            except Exception as e:
+                print(f"❌ Failed to delete {db_related}: {e}")
 
 def clear_directory(directory_path, preserve=[]):
     """Deletes all files in the directory except for preserved files."""
@@ -121,6 +185,11 @@ def main():
     
     # 3. Clean files (preserving default test files so test suite doesn't break)
     print("🧹 Cleaning file system...")
+    clear_directory(STORAGE_PROFILES, preserve=["test_profile.jpg"])
+    clear_directory(STORAGE_PAYMENTS, preserve=["test_payment.jpg"])
+    clear_directory(STORAGE_TMP)
+    clear_directory(STORAGE_PLACARDS)
+    clear_directory(STORAGE_TICKETS)
     clear_directory(UPLOADS_PROFILES, preserve=["test_profile.jpg"])
     clear_directory(UPLOADS_PAYMENTS, preserve=["test_payment.jpg"])
     clear_directory(UPLOADS_TMP)
@@ -136,3 +205,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

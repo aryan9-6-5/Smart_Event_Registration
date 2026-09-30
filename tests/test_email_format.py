@@ -158,3 +158,29 @@ def test_send_email_async_loads_student_details_from_db(monkeypatch, placard):
     details = captured['details']
     assert details['name'] == 'Dee' and details['roll_number'] == 'EM1'
     assert details['ticket_id'].endswith('EM1') and details['review_reason'] == 'underpaid'
+
+
+def test_email_uses_theme_font(placard):
+    msg = EB.build_registration_email(
+        sender='events@example.com', to_email='a@example.com', event=EVENT,
+        colors=COLORS, details=DETAILS, placard_path=placard,
+        font={'family': 'Poppins', 'weights': [400, 600]}
+    )
+    _, html = _parts(msg)
+    assert 'Poppins' in html
+    assert 'fonts.googleapis.com' in html
+
+
+def test_email_includes_banner_when_available(tmp_path, placard):
+    banner_file = tmp_path / 'banner.jpg'
+    Image.new('RGB', (600, 150), '#000000').save(banner_file)
+    msg = EB.build_registration_email(
+        sender='events@example.com', to_email='a@example.com', event=EVENT,
+        colors=COLORS, details=DETAILS, placard_path=placard,
+        banner_path=str(banner_file)
+    )
+    _, html = _parts(msg)
+    assert 'cid:banner' in html
+    # Attachments list should still only contain the ticket attachment, not inline parts
+    attachments = [p for p in msg.iter_attachments()]
+    assert [a.get_filename() for a in attachments] == ['ticket-23881A6623.jpg']

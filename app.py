@@ -214,6 +214,8 @@ def track_failed_attempt(ip, user_agent, form_data_snippet):
 
 def is_ip_blocked(ip):
     """Check if an IP is currently blocked due to abuse."""
+    if ip in ('127.0.0.1', '::1', 'localhost'):
+        return False
     if ip in FLAGGED_IPS:
         if time.time() - FLAGGED_IPS[ip] < ABUSE_COOLDOWN_SECONDS:
             return True
@@ -949,11 +951,27 @@ def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secr
 def send_email(to_email, placard_path, pending=False, fraud=False, details=None):
     """Send the attendee email (HTML + plain text, ticket inline and attached)."""
     config = get_event_config()
+    banner_file = None
+    if BANNER_STATIC_PATH:
+        candidates = [
+            os.path.join(app.static_folder, BANNER_STATIC_PATH),
+            os.path.join(app.root_path, BANNER_STATIC_PATH),
+            os.path.join(app.root_path, 'static', 'theme', 'banner.jpg'),
+            os.path.join(app.root_path, 'theme', 'banner.jpeg'),
+            os.path.join(app.root_path, 'theme', 'banner.jpg'),
+        ]
+        for c in candidates:
+            if c and os.path.exists(c):
+                banner_file = c
+                break
+
     msg = email_builder.build_registration_email(
         sender=SMTP_CONFIG['email'],
         to_email=to_email,
         event=config,
         colors=THEME['colors'],
+        font=THEME.get('font'),
+        banner_path=banner_file,
         details=details or {},
         placard_path=placard_path,
         pending=pending,
@@ -1336,11 +1354,25 @@ def admin_reject(student_id):
 def queue_student_email(student_id):
     """Queue (re)delivery of the placard email. Returns False for unknown/rejected students."""
     with sqlite3.connect('students.db', timeout=10) as conn:
-        row = conn.execute("SELECT email, placard_path, status FROM students WHERE id = ?", (student_id,)).fetchone()
+        row = conn.execute(
+            "SELECT email, placard_path, status, name, roll_number, dept_name, college_name, phone, profile_path, ticket_secret "
+            "FROM students WHERE id = ?", (student_id,)
+        ).fetchone()
         if not row or row[2] == 'REJECTED' or not row[1]:
             return False
+        placard_path = row[1]
+        try:
+            # Refresh placard with current theme colors if profile photo exists
+            if row[3] and row[4] and row[8] and os.path.exists(row[8]):
+                new_path = generate_placard(row[3], row[4], row[5], row[6], row[7], row[8], ticket_secret=row[9])
+                if new_path and os.path.exists(new_path):
+                    placard_path = new_path
+                    conn.execute("UPDATE students SET placard_path = ? WHERE id = ?", (new_path, student_id))
+        except Exception as e:
+            print(f"Placard theme refresh skipped: {e}")
+
         conn.execute("UPDATE students SET email_status = 'pending' WHERE id = ?", (student_id,))
-    EMAIL_EXECUTOR.submit(send_email_async, student_id, row[0], row[1],
+    EMAIL_EXECUTOR.submit(send_email_async, student_id, row[0], placard_path,
                          pending=(row[2] == 'PENDING'),
                          fraud=(row[2] == 'FRAUD'))
     return True

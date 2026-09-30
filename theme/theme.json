@@ -1,0 +1,20 @@
+{
+  "banner": "theme/banner.jpeg",
+  "banner_focus": "center",
+  "colors": {
+    "bg": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "text": "#0F172A",
+    "muted": "#475569",
+    "border": "#E2E8F0",
+    "primary": "#B91C1C",
+    "primary_text": "#FFFFFF"
+  },
+  "font": {
+    "family": "Poppins",
+    "weights": [
+      400,
+      600
+    ]
+  }
+}
