@@ -113,6 +113,19 @@ def test_upload_rejects_decompression_bomb(client, monkeypatch):
     resp = client.post('/upload', data={'file': (file_bytes, 'bomb.png'), 'type': 'profile'}, content_type='multipart/form-data')
     assert resp.status_code == 400
 
+def test_old_static_urls_return_404(client):
+    """Test: Old unauthenticated URLs for user files must return 404."""
+    assert client.get('/uploads/payments/test_payment.jpg').status_code == 404
+    assert client.get('/placards/placard_TEST123.jpg').status_code == 404
+    assert client.get('/static/placards/placard_TEST123.jpg').status_code == 404
+    assert client.get('/static/uploads/payments/test_payment.jpg').status_code == 404
+
+def test_success_page_by_roll_number_returns_404(client):
+    """Bug test: Accessing /success/<roll_number> must return 404, only public_token is allowed."""
+    assert client.get('/success/CHAR1001').status_code == 404
+
+
+
 
 
 

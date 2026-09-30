@@ -10,7 +10,7 @@ import shutil
 from datetime import datetime
 from collections import defaultdict
 from email.message import EmailMessage
-from flask import Flask, request, render_template, url_for, jsonify, redirect
+from flask import Flask, request, render_template, url_for, jsonify, redirect, abort, send_from_directory, send_file
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from flask_wtf import FlaskForm, CSRFProtect
@@ -27,6 +27,12 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max upload
 ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
 Image.MAX_IMAGE_PIXELS = 25_000_000  # Decompression bomb guard
 csrf = CSRFProtect(app)
+
+@app.before_request
+def block_private_file_access():
+    if request.path.startswith(('/uploads/', '/placards/', '/tickets/', '/static/uploads/', '/static/placards/', '/static/tickets/')):
+        abort(404)
+
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
@@ -275,10 +281,10 @@ def init_db():
             name TEXT, email TEXT, roll_number TEXT UNIQUE,
             dept_name TEXT, college_name TEXT, trans_id TEXT UNIQUE,
             phone TEXT, profile_path TEXT, payment_path TEXT,
-            placard_path TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            placard_path TEXT, public_token TEXT UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
         
-        # Check and add created_at column if it is missing in the database
+        # Check and add created_at / public_token columns if missing
         cursor.execute("PRAGMA table_info(students)")
         columns = [row[1] for row in cursor.fetchall()]
         if 'created_at' not in columns:
@@ -288,6 +294,14 @@ def init_db():
                 print("Added missing created_at column to students table.")
             except Exception as e:
                 print(f"Error adding created_at column: {e}")
+        if 'public_token' not in columns:
+            try:
+                cursor.execute("ALTER TABLE students ADD COLUMN public_token TEXT")
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_public_token ON students(public_token)")
+                conn.commit()
+                print("Added missing public_token column to students table.")
+            except Exception as e:
+                print(f"Error adding public_token column: {e}")
 
         cursor.execute('''CREATE TABLE IF NOT EXISTS abuse_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -637,17 +651,36 @@ def upload_file():
         return jsonify({'error': error_msg}), 500
 
 
-@app.route('/success/<roll_number>', methods=['GET'])
-def success_page(roll_number):
-    """Dedicated GET route for the success page — prevents resubmission on refresh."""
-    import os
-    placard_filename = f'placards/placard_{roll_number}.jpg'
-    placard_full_path = os.path.join('static', placard_filename)
-    if not os.path.exists(placard_full_path):
-        return redirect(url_for('index'))
+@app.route('/placard/<public_token>', methods=['GET'])
+def view_placard(public_token):
+    """Serve student placard image safely via unguessable public_token."""
+    with sqlite3.connect('students.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT placard_path FROM students WHERE public_token = ?", (public_token,))
+        row = cursor.fetchone()
+        if not row:
+            abort(404)
+        placard_path = row[0]
+        if not os.path.exists(placard_path):
+            abort(404)
+        return send_file(os.path.abspath(placard_path), mimetype='image/jpeg')
+
+@app.route('/success/<public_token>', methods=['GET'])
+def success_page(public_token):
+    """Dedicated GET route for the success page using unguessable public_token."""
+    with sqlite3.connect('students.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT roll_number, placard_path FROM students WHERE public_token = ?", (public_token,))
+        row = cursor.fetchone()
+        if not row:
+            abort(404)
+        placard_path = row[1]
+        if not os.path.exists(placard_path):
+            abort(404)
+
     email_failed = request.args.get('email_failed') == '1'
     return render_template('success.html', 
-        placard_url=url_for('static', filename=placard_filename),
+        placard_url=url_for('view_placard', public_token=public_token),
         email_failed=email_failed)
 
 @app.route('/', methods=['GET', 'POST'])
@@ -742,19 +775,23 @@ def index():
                 profile_tmp_path
             )
 
+            # Generate unguessable public token for attendee
+            public_token = uuid.uuid4().hex
+
             try:
                 # 1. Database insert first
                 with sqlite3.connect('students.db') as conn:
                     conn.execute('''
                         INSERT INTO students 
                         (name, email, roll_number, dept_name, college_name, 
-                         trans_id, phone, profile_path, payment_path, placard_path)
-                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                         trans_id, phone, profile_path, payment_path, placard_path, public_token)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)
                     ''', (
                         form.name.data, form.email.data, roll_number_clean,
                         form.dept_name.data, form.college_name.data,
                         form.trans_id.data, form.phone.data,
-                        final_profile_path, final_payment_path, placard_path
+                        final_profile_path, final_payment_path, placard_path,
+                        public_token
                     ))
                 
                 # 2. Move files from temporary staging to permanent private storage
@@ -784,8 +821,8 @@ def index():
             # Clear any abuse tracking for this IP on successful registration
             ABUSE_TRACKER.pop(client_ip, None)
             
-            # POST-Redirect-GET: redirect to success page to prevent resubmission on refresh
-            return redirect(url_for('success_page', roll_number=roll_number_clean, email_failed=(0 if email_sent else 1)))
+            # POST-Redirect-GET: redirect to success page using unguessable token
+            return redirect(url_for('success_page', public_token=public_token, email_failed=(0 if email_sent else 1)))
         
         except Exception as e:
             return render_template('index.html', form=form, error=str(e))
