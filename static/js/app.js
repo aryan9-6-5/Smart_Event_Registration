@@ -47,16 +47,74 @@ const uploadState = {
 };
 
 // ─── File Upload Handler ──────────────────────────────────────────────────────
-function handleFileUpload(fileInput, progressBar, progressText, pathField, type) {
-    const file = fileInput.files[0];
-    if (!file) return;
+// Phone photos are often larger than the server's 5 MB limit: shrink them in the browser first.
+const UPLOAD_MAX_SIDE = 2000;          // px, longest side
+const UPLOAD_SKIP_BELOW = 1.5 * 1024 * 1024;
 
-    // Immediately clear path, reset upload state, and remove uploaded state styling
+function prepareImageForUpload(file) {
+    return new Promise(function (resolve) {
+        if (!file.type || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+            resolve(file);
+            return;
+        }
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = function () {
+            URL.revokeObjectURL(url);
+            const scale = Math.min(1, UPLOAD_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+            if (scale === 1 && file.size <= UPLOAD_SKIP_BELOW) {
+                resolve(file);
+                return;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.naturalWidth * scale);
+            canvas.height = Math.round(img.naturalHeight * scale);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white'; // flatten transparency for JPEG
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(function (blob) {
+                if (!blob || (scale === 1 && blob.size >= file.size)) {
+                    resolve(file);
+                    return;
+                }
+                resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
+            }, 'image/jpeg', 0.88);
+        };
+        img.onerror = function () {  // e.g. HEIC: let the server explain the problem
+            URL.revokeObjectURL(url);
+            resolve(file);
+        };
+        img.src = url;
+    });
+}
+
+function uploadErrorMessage(xhr) {
+    try {
+        const body = JSON.parse(xhr.responseText);
+        if (body && body.error) return body.error;
+    } catch (e) { /* non-JSON error page */ }
+    if (xhr.status === 400) return 'Your session expired. Refresh the page and try again.';
+    if (xhr.status === 429) return 'Too many uploads. Wait a minute and try again.';
+    return 'Upload failed. Please try again.';
+}
+
+function handleFileUpload(fileInput, progressBar, progressText, pathField, type) {
+    const original = fileInput.files[0];
+    if (!original) return;
+
+    // Immediately clear path and reset upload state while the image is prepared
     pathField.value = '';
     uploadState[type] = false;
 
+    prepareImageForUpload(original).then(function (prepared) {
+        startUpload(fileInput, progressBar, progressText, pathField, type, original, prepared);
+    });
+}
+
+function startUpload(fileInput, progressBar, progressText, pathField, type, file, uploadFile) {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', uploadFile, uploadFile.name);
     formData.append('type', type);
 
     // Add roll number from form
@@ -165,7 +223,7 @@ function handleFileUpload(fileInput, progressBar, progressText, pathField, type)
                     errEl.className = 'upload-error';
                     uploadCard.appendChild(errEl);
                 }
-                errEl.textContent = 'Upload failed. Please try again.';
+                errEl.textContent = uploadErrorMessage(xhr);
             }
 
             console.error("Upload error:", xhr.responseText);

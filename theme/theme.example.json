@@ -2,12 +2,12 @@
   "banner": null,
   "banner_focus": "center",
   "colors": {
-    "bg": "#F4F6F8",
+    "bg": "#EFF4FC",
     "surface": "#FFFFFF",
-    "text": "#111827",
-    "muted": "#5B6472",
-    "border": "#D9DEE5",
-    "primary": "#1D4ED8",
+    "text": "#0F1B3D",
+    "muted": "#4F5F82",
+    "border": "#D3DEF2",
+    "primary": "#1E40AF",
     "primary_text": "#FFFFFF"
   },
   "font": {
