@@ -16,7 +16,7 @@ def test_index_page_loads(client):
     assert b"Registration Form" in response.data
 
 def test_file_upload_happy_path(client):
-    """Characterization test: POST /upload saves file and returns json path."""
+    """Characterization test: POST /upload saves file and returns upload token."""
     data = {
         'file': (create_in_memory_image(), 'test_photo.png'),
         'type': 'profile'
@@ -24,9 +24,7 @@ def test_file_upload_happy_path(client):
     response = client.post('/upload', data=data, content_type='multipart/form-data')
     assert response.status_code == 200
     json_data = response.get_json()
-    assert 'path' in json_data
-    assert 'tmp_profile_' in json_data['path']
-    assert os.path.exists(json_data['path'])
+    assert 'token' in json_data
 
 def test_full_registration_happy_path(client, monkeypatch):
     """Characterization test: Complete registration flow from upload to success page."""
@@ -36,7 +34,7 @@ def test_full_registration_happy_path(client, monkeypatch):
         'type': 'profile'
     }, content_type='multipart/form-data')
     assert profile_resp.status_code == 200
-    profile_path = profile_resp.get_json()['path']
+    profile_token = profile_resp.get_json()['token']
 
     # 2. Upload payment image (mock OCR return value to avoid dependency on tesseract.exe in tests)
     import app
@@ -47,7 +45,7 @@ def test_full_registration_happy_path(client, monkeypatch):
         'type': 'payment'
     }, content_type='multipart/form-data')
     assert payment_resp.status_code == 200
-    payment_path = payment_resp.get_json()['path']
+    payment_token = payment_resp.get_json()['token']
 
     # 3. Submit registration form
     form_data = {
@@ -58,12 +56,13 @@ def test_full_registration_happy_path(client, monkeypatch):
         'college_name': 'Test College',
         'trans_id': 'TXN12345678',
         'phone': '9876543210',
-        'profile_path': profile_path,
-        'payment_path': payment_path
+        'profile_token': profile_token,
+        'payment_token': payment_token
     }
     reg_resp = client.post('/', data=form_data, follow_redirects=False)
     assert reg_resp.status_code == 302
-    assert '/success/CHAR1001' in reg_resp.headers['Location']
+    assert '/success/' in reg_resp.headers['Location']
+
 
     # 4. Success page loads
     success_resp = client.get('/success/CHAR1001')

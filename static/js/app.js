@@ -96,7 +96,7 @@ function handleFileUpload(fileInput, progressBar, progressText, pathField, type)
     xhr.onload = function () {
         if (xhr.status === 200) {
             const response = JSON.parse(xhr.responseText);
-            pathField.value = response.path;
+            pathField.value = response.token || response.path || '';
             uploadState[type] = true;
 
             if (uploadCard) {
@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const profileUpload = document.getElementById('profile-upload');
     const profileProgress = document.getElementById('profile-progress');
     const profileProgressText = document.getElementById('profile-progress-text');
-    const profilePath = document.getElementById('profile_path');
+    const profilePath = document.getElementById('profile_token') || document.getElementById('profile_path');
 
     if (profileUpload) {
         profileUpload.addEventListener('change', function () {
@@ -285,7 +285,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const paymentUpload = document.getElementById('payment-upload');
     const paymentProgress = document.getElementById('payment-progress');
     const paymentProgressText = document.getElementById('payment-progress-text');
-    const paymentPath = document.getElementById('payment_path');
+    const paymentPath = document.getElementById('payment_token') || document.getElementById('payment_path');
 
     if (paymentUpload) {
         paymentUpload.addEventListener('change', function () {
@@ -396,7 +396,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Check profile upload
-            const profilePathValue = document.getElementById('profile_path')?.value;
+            const profileTokenEl = document.getElementById('profile_token') || document.getElementById('profile_path');
+            const profilePathValue = profileTokenEl?.value;
             if (!profilePathValue || !profilePathValue.trim()) {
                 errors.push('Profile photo is required. Please upload your photo.');
                 const profileCard = document.querySelector('#profile-upload')?.closest('.upload-card');
@@ -406,7 +407,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Check payment upload
-            const paymentPathValue = document.getElementById('payment_path')?.value;
+            const paymentTokenEl = document.getElementById('payment_token') || document.getElementById('payment_path');
+            const paymentPathValue = paymentTokenEl?.value;
             if (!paymentPathValue || !paymentPathValue.trim()) {
                 errors.push('Payment proof is required. Please upload your payment screenshot.');
                 const paymentCard = document.querySelector('#payment-upload')?.closest('.upload-card');

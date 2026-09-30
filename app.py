@@ -229,8 +229,12 @@ class RegistrationForm(FlaskForm):
         DataRequired(message="Phone number is required."),
         Regexp(r'^\d{10}$', message="Phone number must be exactly 10 digits. No spaces, dashes, or country codes.")
     ])
-    profile_path = StringField()
-    payment_path = StringField()
+    profile_token = StringField('Profile Token', validators=[
+        DataRequired(message="Profile photo is required. Please upload your photo.")
+    ])
+    payment_token = StringField('Payment Token', validators=[
+        DataRequired(message="Payment proof is required. Please upload your payment screenshot.")
+    ])
 
 # Test data for quick testing
 TEST_DATA = {
@@ -468,7 +472,7 @@ def generate_placard(name, roll, dept, college, phone, profile_path):
     # QR Code generation
     qr_data = f"{config['ticket_prefix']}{roll}"
     qr_img = qrcode.make(qr_data)
-    qr_path = f"static/tickets/ticket_{roll}.png"
+    qr_path = os.path.join(STORAGE_TICKETS, f"ticket_{roll}.png")
     os.makedirs(os.path.dirname(qr_path), exist_ok=True)
     qr_img.save(qr_path)
 
@@ -482,7 +486,8 @@ def generate_placard(name, roll, dept, college, phone, profile_path):
     # Date info at bottom of the stub
     draw.text((850, 530), config['date'].upper(), fill=COLOR_SECONDARY, font=font_footer, anchor='mm')
 
-    placard_path = f"static/placards/placard_{roll}.jpg"
+    placard_path = os.path.join(STORAGE_PLACARDS, f"placard_{roll}.jpg")
+    os.makedirs(os.path.dirname(placard_path), exist_ok=True)
     placard.save(placard_path)
     return placard_path
 
@@ -650,19 +655,32 @@ def index():
         print("Form submitted with data:", {field.name: field.data for field in form})
         print("[OK] form.validate_on_submit passed")
         try:
-            profile_path = form.profile_path.data
-            payment_path = form.payment_path.data
+            profile_token = (form.profile_token.data or '').strip()
+            payment_token = (form.payment_token.data or '').strip()
             
-            # ─── Server-side file existence guard ────────────────────────
-            if not profile_path or not profile_path.strip():
-                return render_template('index.html', form=form, error="Profile photo is required. Please upload your photo.")
-            if not os.path.exists(profile_path):
-                return render_template('index.html', form=form, error="Profile photo upload failed or file is missing. Please re-upload.")
+            # ─── Server-side token resolution via uploads table ──────────
+            with sqlite3.connect('students.db') as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT stored_name FROM uploads WHERE token = ? AND kind = 'profile'", (profile_token,))
+                row_prof = cursor.fetchone()
+                if not row_prof:
+                    return render_template('index.html', form=form, error="Profile photo upload is invalid or expired. Please re-upload.")
                 
-            if not payment_path or not payment_path.strip():
-                return render_template('index.html', form=form, error="Payment proof is required. Please upload your payment screenshot.")
-            if not os.path.exists(payment_path):
-                return render_template('index.html', form=form, error="Payment proof upload failed or file is missing. Please re-upload.")
+                cursor.execute("SELECT stored_name FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
+                row_pay = cursor.fetchone()
+                if not row_pay:
+                    return render_template('index.html', form=form, error="Payment proof upload is invalid or expired. Please re-upload.")
+            
+            stored_profile = row_prof[0]
+            stored_payment = row_pay[0]
+            
+            profile_tmp_path = os.path.join(STORAGE_TMP, stored_profile)
+            payment_tmp_path = os.path.join(STORAGE_TMP, stored_payment)
+            
+            if not os.path.exists(profile_tmp_path):
+                return render_template('index.html', form=form, error="Profile photo file is missing. Please re-upload.")
+            if not os.path.exists(payment_tmp_path):
+                return render_template('index.html', form=form, error="Payment proof file is missing. Please re-upload.")
             
             # Check if roll number or transaction ID already exists
             roll_number_clean = form.roll_number.data.strip().upper()
@@ -676,21 +694,21 @@ def index():
                 if cursor.fetchone():
                     return render_template('index.html', form=form, error="This Transaction ID has already been used. Each payment can only be used for one registration.")
 
-            # Move files from temp to final folders
-            profile_ext = os.path.splitext(profile_path)[1] or ".png"
-            payment_ext = os.path.splitext(payment_path)[1] or ".png"
+            # Destination files in private storage
+            profile_ext = os.path.splitext(stored_profile)[1] or ".png"
+            payment_ext = os.path.splitext(stored_payment)[1] or ".png"
             
-            final_profile_path = f"static/uploads/profiles/{roll_number_clean}_profile{profile_ext}"
-            final_payment_path = f"static/uploads/payments/{roll_number_clean}_payment{payment_ext}"
+            final_profile_path = os.path.join(STORAGE_PROFILES, f"{roll_number_clean}_profile{profile_ext}")
+            final_payment_path = os.path.join(STORAGE_PAYMENTS, f"{roll_number_clean}_payment{payment_ext}")
             
-            # Generate placard using the current profile path (which is currently temp or existing)
+            # Generate placard using the temp profile photo
             placard_path = generate_placard(
                 form.name.data,
                 roll_number_clean,
                 form.dept_name.data,
                 form.college_name.data,
                 form.phone.data,
-                profile_path
+                profile_tmp_path
             )
 
             try:
@@ -708,31 +726,23 @@ def index():
                         final_profile_path, final_payment_path, placard_path
                     ))
                 
-                # 2. Database write succeeded, now move/copy files to permanent storage
-                if "static/uploads/tmp" in profile_path:
-                    shutil.move(profile_path, final_profile_path)
-                else:
-                    if not os.path.exists(final_profile_path) and os.path.exists(profile_path):
-                        shutil.copy(profile_path, final_profile_path)
-                        
-                if "static/uploads/tmp" in payment_path:
-                    shutil.move(payment_path, final_payment_path)
-                else:
-                    if not os.path.exists(final_payment_path) and os.path.exists(payment_path):
-                        shutil.copy(payment_path, final_payment_path)
+                # 2. Move files from temporary staging to permanent private storage
+                if os.path.exists(profile_tmp_path):
+                    shutil.move(profile_tmp_path, final_profile_path)
+                if os.path.exists(payment_tmp_path):
+                    shutil.move(payment_tmp_path, final_payment_path)
             except Exception as e:
-                # Database write failed: Delete generated files and temp uploads to keep server clean
-                if "static/uploads/tmp" in profile_path and os.path.exists(profile_path):
-                    try: os.remove(profile_path)
+                # Cleanup on failure
+                if os.path.exists(profile_tmp_path):
+                    try: os.remove(profile_tmp_path)
                     except: pass
-                if "static/uploads/tmp" in payment_path and os.path.exists(payment_path):
-                    try: os.remove(payment_path)
+                if os.path.exists(payment_tmp_path):
+                    try: os.remove(payment_tmp_path)
                     except: pass
                 if os.path.exists(placard_path):
                     try: os.remove(placard_path)
                     except: pass
-                # Also delete the generated ticket QR code
-                ticket_path = f"static/tickets/ticket_{roll_number_clean}.png"
+                ticket_path = os.path.join(STORAGE_TICKETS, f"ticket_{roll_number_clean}.png")
                 if os.path.exists(ticket_path):
                     try: os.remove(ticket_path)
                     except: pass

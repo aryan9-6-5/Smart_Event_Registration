@@ -58,5 +58,28 @@ def test_upload_returns_token_and_inserts_in_uploads_table(client):
         assert row is not None
         assert row[0] == 'profile'
 
+def test_path_injection_in_token_fields_fails(client):
+    """Bug test: Submitting .env, ../app.py, or arbitrary paths as tokens must be rejected."""
+    form_data = {
+        'name': 'Hacker Student',
+        'email': 'hacker@example.com',
+        'roll_number': 'HACK001',
+        'dept_name': 'Security',
+        'college_name': 'Test College',
+        'trans_id': 'HACK12345',
+        'phone': '9876543210',
+        'profile_token': '.env',
+        'payment_token': '../app.py'
+    }
+    resp = client.post('/', data=form_data, follow_redirects=False)
+    # Must fail validation and NOT redirect
+    assert resp.status_code == 200
+    assert resp.headers.get('Location') is None
+    # Verify .env was not copied to anywhere in static or storage
+    import os
+    assert not os.path.exists('static/uploads/profiles/HACK001_profile.env')
+    assert not os.path.exists('storage/profiles/HACK001_profile.env')
+
+
 
 
