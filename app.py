@@ -29,6 +29,7 @@ import pytesseract
 from PIL import Image
 import re
 import theme as theme_module
+import email_builder
 load_dotenv()
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -784,33 +785,24 @@ def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secr
     return placard_path
 
 
-def send_email(to_email, placard_path, pending=False):
-    msg = EmailMessage()
-    event_title = get_event_config().get('title', 'Event')
-    msg['From'] = SMTP_CONFIG['email']
-    msg['To'] = to_email
-    if pending:
-        msg['Subject'] = f'{event_title} Registration Received (Pending Review)'
-        msg.set_content('We received your registration. Your payment proof is pending manual review. '
-                        'Your ticket is attached but will only be valid for entry once your registration is approved.')
-    else:
-        msg['Subject'] = f'{event_title} Registration Confirmation'
-        msg.set_content('Your registration is confirmed! Find your ticket attached.')
-
-    try:
-        with open(placard_path, 'rb') as f:
-            msg.add_attachment(f.read(), maintype='image', subtype='jpeg', filename='placard.jpg')
-    except Exception as e:
-        print(f"Error attaching placard: {e}")
-        # Continue with email sending even if attachment fails
-
+def send_email(to_email, placard_path, pending=False, details=None):
+    """Send the attendee email (HTML + plain text, ticket inline and attached)."""
+    config = get_event_config()
+    msg = email_builder.build_registration_email(
+        sender=SMTP_CONFIG['email'],
+        to_email=to_email,
+        event=config,
+        colors=THEME['colors'],
+        details=details or {},
+        placard_path=placard_path,
+        pending=pending,
+    )
     try:
         print(f"Connecting to {SMTP_CONFIG['server']}:{SMTP_CONFIG['port']}")
         server = smtplib.SMTP(SMTP_CONFIG['server'], SMTP_CONFIG['port'], timeout=10)
         server.ehlo()  # Identify to server
         server.starttls()  # Start TLS encryption
         server.ehlo()  # Re-identify after STARTTLS
-        print(f"Logging in with {SMTP_CONFIG['email']}")
         server.login(SMTP_CONFIG['email'], SMTP_CONFIG['password'])
         server.send_message(msg)
         server.quit()
@@ -820,12 +812,31 @@ def send_email(to_email, placard_path, pending=False):
         print(f"SMTP error: {str(e)}")
         return False
 
+def load_email_details(student_id):
+    """Student fields the email needs, or None when the row is missing."""
+    try:
+        with sqlite3.connect('students.db', timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT name, roll_number, dept_name, college_name, review_reason "
+                               "FROM students WHERE id = ?", (student_id,)).fetchone()
+    except Exception as e:
+        print(f"Error loading student details for email: {e}")
+        return None
+    if not row:
+        return None
+    details = dict(row)
+    details['ticket_id'] = f"{get_event_config().get('ticket_prefix', '')}{row['roll_number']}"
+    return details
+
 EMAIL_RETRY_DELAYS = (2, 5)  # seconds to wait before retry #1 and #2 (3 attempts total)
 
 def send_email_async(student_id, to_email, placard_path, pending=False):
     """Background worker task to deliver attendee placard email (with retries) and update email_status."""
     success = False
     kwargs = {'pending': True} if pending else {}
+    details = load_email_details(student_id)
+    if details:
+        kwargs['details'] = details
     for attempt, delay in enumerate((0,) + tuple(EMAIL_RETRY_DELAYS)):
         if delay:
             time.sleep(delay)

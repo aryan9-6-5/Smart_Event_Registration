@@ -7,6 +7,8 @@ from PIL import Image
 
 import app as flask_app
 
+_REAL_SEND_EMAIL = flask_app.send_email
+
 @pytest.fixture(scope="session")
 def test_env(tmp_path_factory):
     temp_dir = tmp_path_factory.mktemp("test_env")
@@ -72,3 +74,9 @@ def dummy_image(tmp_path):
     img = Image.new("RGB", (100, 100), color="blue")
     img.save(str(img_path))
     return str(img_path)
+
+
+@pytest.fixture
+def real_send_email():
+    """The un-mocked send_email (the autouse fixture replaces it so tests never hit SMTP)."""
+    return _REAL_SEND_EMAIL
