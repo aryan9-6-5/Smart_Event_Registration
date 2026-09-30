@@ -20,6 +20,11 @@ __pycache__/
 *.tmp
 *.swp
 *.bak
+.pytest_cache/
+
+# Storage and backups
+storage/
+backups/
 
 # Temporary file uploads & generated user assets
 static/uploads/tmp/
