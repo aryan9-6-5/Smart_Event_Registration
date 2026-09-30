@@ -50,8 +50,10 @@ def app(test_env):
     flask_app.app.config.update({
         "TESTING": True,
         "WTF_CSRF_ENABLED": False,
-        "SECRET_KEY": "test-secret-key"
+        "SECRET_KEY": "test-secret-key",
+        "RATELIMIT_ENABLED": False
     })
+    flask_app.limiter.enabled = False
     return flask_app.app
 
 @pytest.fixture

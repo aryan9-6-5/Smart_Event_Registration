@@ -48,4 +48,26 @@ def test_proxy_fix_middleware_configuration(monkeypatch):
     finally:
         test_app.wsgi_app = orig_wsgi
 
+def test_rate_limiter_blocks_excessive_requests(client):
+    """Test: Sensitive endpoints enforce rate limiting returning HTTP 429 when exceeded."""
+    import flask_limiter
+    assert hasattr(flask_app, 'limiter')
+    assert isinstance(flask_app.limiter, flask_limiter.Limiter)
+
+    flask_app.app.config["RATELIMIT_ENABLED"] = True
+    flask_app.limiter.enabled = True
+    flask_app.limiter.reset()
+
+    try:
+        statuses = []
+        for _ in range(6):
+            r = client.post('/admin/login', data={'username': 'admin', 'password': 'bad'}, follow_redirects=False)
+            statuses.append(r.status_code)
+
+        assert 429 in statuses
+    finally:
+        flask_app.app.config["RATELIMIT_ENABLED"] = False
+        flask_app.limiter.enabled = False
+
+
 

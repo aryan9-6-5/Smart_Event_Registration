@@ -18,6 +18,8 @@ from flask import Flask, request, render_template, url_for, jsonify, redirect, a
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from flask_wtf import FlaskForm, CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from wtforms import StringField, EmailField
 from wtforms.validators import DataRequired, Email, Length, Regexp
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -33,6 +35,12 @@ ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
 Image.MAX_IMAGE_PIXELS = 25_000_000  # Decompression bomb guard
 csrf = CSRFProtect(app)
 EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_worker")
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["300 per day", "100 per hour"],
+    storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+)
 
 def configure_proxy_fix(target_app):
     """Configure ProxyFix middleware when behind a reverse proxy (e.g. Nginx, Cloudflare)."""
@@ -79,6 +87,15 @@ def set_security_headers(response):
 @app.errorhandler(413)
 def request_entity_too_large(error):
     return jsonify({'error': 'File size exceeds maximum limit of 5 MB'}), 413
+
+@app.errorhandler(429)
+def ratelimit_exceeded(error):
+    """Handle rate limit breaches gracefully across API and browser requests."""
+    if request.is_json or request.path.startswith(('/upload', '/admin/checkin')):
+        return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
+    if request.path.startswith('/admin'):
+        return render_template('admin_login.html', error="Too many requests. Please wait a moment and try again."), 429
+    return render_template('index.html', form=RegistrationForm(), error="Too many requests. Please slow down and try again later."), 429
 
 # Private Storage Configuration (outside static web root)
 STORAGE_DIR = os.getenv('STORAGE_DIR', 'storage')
@@ -720,6 +737,7 @@ def cleanup_old_temp_files(max_age_seconds=1800):  # 30 minutes
             print(f"Error cleaning old temp files: {e}")
 
 @app.route('/upload', methods=['POST'])
+@limiter.limit("15 per minute")
 def upload_file():
     cleanup_old_temp_files()
     print("Upload endpoint called")
@@ -860,6 +878,7 @@ def admin_required(f):
     return decorated_function
 
 @app.route('/admin/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute", methods=["POST"])
 def admin_login():
     if request.method == 'POST':
         username = request.form.get('username')
@@ -1027,6 +1046,7 @@ def admin_checkin():
 
 
 @app.route('/', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"])
 def index():
     cleanup_old_temp_files()
     form = RegistrationForm()
