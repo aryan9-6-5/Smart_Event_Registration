@@ -620,7 +620,7 @@ def init_db():
         cursor.execute('''CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT, email TEXT, roll_number TEXT UNIQUE,
-            dept_name TEXT, college_name TEXT, trans_id TEXT UNIQUE,
+            dept_name TEXT, college_name TEXT, trans_id TEXT,
             phone TEXT, profile_path TEXT, payment_path TEXT,
             placard_path TEXT, public_token TEXT UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'CONFIRMED',
@@ -631,6 +631,45 @@ def init_db():
             checked_in_at TIMESTAMP,
             ticket_secret TEXT
         )''')
+
+        # Migration: if existing table has trans_id UNIQUE, recreate table to allow fraud duplicate tracking
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='students'")
+        schema_row = cursor.fetchone()
+        if schema_row and 'trans_id TEXT UNIQUE' in schema_row[0]:
+            try:
+                cursor.execute("PRAGMA foreign_keys=OFF")
+                cursor.execute("""CREATE TABLE students_nonunique_trans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT, email TEXT, roll_number TEXT UNIQUE,
+                    dept_name TEXT, college_name TEXT, trans_id TEXT,
+                    phone TEXT, profile_path TEXT, payment_path TEXT,
+                    placard_path TEXT, public_token TEXT UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'CONFIRMED',
+                    ocr_trans_id TEXT,
+                    trans_id_source TEXT DEFAULT 'manual',
+                    payment_phash TEXT,
+                    email_status TEXT DEFAULT 'pending',
+                    checked_in_at TIMESTAMP,
+                    ticket_secret TEXT,
+                    amount_paid TEXT,
+                    amount_expected TEXT,
+                    amount_status TEXT,
+                    review_reason TEXT
+                )""")
+                cursor.execute("PRAGMA table_info(students)")
+                existing_cols = [r[1] for r in cursor.fetchall()]
+                cols_str = ", ".join(existing_cols)
+                cursor.execute(f"INSERT INTO students_nonunique_trans ({cols_str}) SELECT {cols_str} FROM students")
+                cursor.execute("DROP TABLE students")
+                cursor.execute("ALTER TABLE students_nonunique_trans RENAME TO students")
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_public_token ON students(public_token)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_students_status ON students(status)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_students_phash ON students(payment_phash)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_students_trans_id ON students(trans_id)")
+                conn.commit()
+                print("Migrated students table: trans_id UNIQUE constraint removed to allow fraud capture.")
+            except Exception as e:
+                print(f"Error migrating students table: {e}")
         
         # Additive migration: check and add missing columns
         cursor.execute("PRAGMA table_info(students)")
@@ -897,7 +936,7 @@ def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secr
     return placard_path
 
 
-def send_email(to_email, placard_path, pending=False, details=None):
+def send_email(to_email, placard_path, pending=False, fraud=False, details=None):
     """Send the attendee email (HTML + plain text, ticket inline and attached)."""
     config = get_event_config()
     msg = email_builder.build_registration_email(
@@ -908,6 +947,7 @@ def send_email(to_email, placard_path, pending=False, details=None):
         details=details or {},
         placard_path=placard_path,
         pending=pending,
+        fraud=fraud,
     )
     try:
         print(f"Connecting to {SMTP_CONFIG['server']}:{SMTP_CONFIG['port']}")
@@ -929,7 +969,7 @@ def load_email_details(student_id):
     try:
         with sqlite3.connect('students.db', timeout=10) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT name, roll_number, dept_name, college_name, review_reason "
+            row = conn.execute("SELECT name, roll_number, dept_name, college_name, review_reason, status "
                                "FROM students WHERE id = ?", (student_id,)).fetchone()
     except Exception as e:
         print(f"Error loading student details for email: {e}")
@@ -942,13 +982,23 @@ def load_email_details(student_id):
 
 EMAIL_RETRY_DELAYS = (2, 5)  # seconds to wait before retry #1 and #2 (3 attempts total)
 
-def send_email_async(student_id, to_email, placard_path, pending=False):
+def send_email_async(student_id, to_email, placard_path, pending=False, fraud=False):
     """Background worker task to deliver attendee placard email (with retries) and update email_status."""
     success = False
-    kwargs = {'pending': True} if pending else {}
+    kwargs = {}
+    if fraud:
+        kwargs['fraud'] = True
+    elif pending:
+        kwargs['pending'] = True
     details = load_email_details(student_id)
     if details:
         kwargs['details'] = details
+        if not pending and not fraud:
+            status_val = details.get('status')
+            if status_val == 'FRAUD':
+                kwargs['fraud'] = True
+            elif status_val == 'PENDING':
+                kwargs['pending'] = True
     for attempt, delay in enumerate((0,) + tuple(EMAIL_RETRY_DELAYS)):
         if delay:
             time.sleep(delay)
@@ -1105,18 +1155,19 @@ def success_page(public_token):
     """Dedicated GET route for the success page using unguessable public_token."""
     with sqlite3.connect('students.db') as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT status, placard_path, email_status FROM students WHERE public_token = ?", (public_token,))
+        cursor.execute("SELECT status, placard_path, email_status, review_reason FROM students WHERE public_token = ?", (public_token,))
         row = cursor.fetchone()
         if not row:
             abort(404)
-        status, placard_path, email_status = row
+        status, placard_path, email_status, review_reason = row
         if not placard_path or not os.path.exists(placard_path):
             abort(404)
 
     return render_template('success.html',
         placard_url=url_for('view_placard', public_token=public_token),
         email_failed=(email_status == 'failed'),
-        status=status)
+        status=status,
+        review_reason=review_reason)
 
 # ─── Admin Portal ─────────────────────────────────────────────────────────────
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
@@ -1175,11 +1226,21 @@ def admin_logout():
 def admin_dashboard():
     q = request.args.get('q', '').strip()
     status_filter = request.args.get('status', '').upper()
-    if status_filter not in ('PENDING', 'CONFIRMED', 'REJECTED'):
+    if status_filter not in ('PENDING', 'CONFIRMED', 'REJECTED', 'FRAUD'):
         status_filter = ''
     with sqlite3.connect('students.db') as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
+
+        # Fraud profiles awaiting investigation
+        cur.execute('''
+            SELECT id, name, roll_number, email, phone, trans_id, ocr_trans_id, trans_id_source, created_at,
+                   amount_paid, amount_expected, amount_status, review_reason
+            FROM students
+            WHERE status = 'FRAUD'
+            ORDER BY id DESC
+        ''')
+        fraud_students = cur.fetchall()
 
         # Pending students awaiting verification
         cur.execute('''
@@ -1196,6 +1257,7 @@ def admin_dashboard():
             SELECT COUNT(*) AS total,
                    COALESCE(SUM(status = 'CONFIRMED'), 0) AS confirmed,
                    COALESCE(SUM(status = 'PENDING'), 0) AS pending,
+                   COALESCE(SUM(status = 'FRAUD'), 0) AS fraud,
                    COALESCE(SUM(status = 'REJECTED'), 0) AS rejected,
                    COALESCE(SUM(checked_in_at IS NOT NULL), 0) AS checked_in
             FROM students
@@ -1204,7 +1266,7 @@ def admin_dashboard():
 
         # Registrations list: search results when a query is given, else the (optionally filtered) latest entries
         columns = ("id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at, email_status, "
-                   "amount_paid, amount_expected, amount_status")
+                   "amount_paid, amount_expected, amount_status, review_reason")
         if q:
             cur.execute(f'''
                 SELECT {columns} FROM students
@@ -1218,6 +1280,7 @@ def admin_dashboard():
         registrations = cur.fetchall()
 
     return render_template('admin_dashboard.html',
+        fraud_students=fraud_students,
         pending_students=pending_students,
         registrations=registrations,
         stats=stats,
@@ -1228,10 +1291,25 @@ def admin_dashboard():
 @admin_required
 def admin_approve(student_id):
     with sqlite3.connect('students.db') as conn:
-        cur = conn.execute("UPDATE students SET status = 'CONFIRMED' WHERE id = ? AND status = 'PENDING'", (student_id,))
+        cur = conn.execute("UPDATE students SET status = 'CONFIRMED' WHERE id = ? AND status IN ('PENDING', 'FRAUD')", (student_id,))
         approved = cur.rowcount == 1
     if approved:
         queue_student_email(student_id)  # tell the attendee their ticket is now valid
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/mark_fraud/<int:student_id>', methods=['POST'])
+@admin_required
+def admin_mark_fraud(student_id):
+    with sqlite3.connect('students.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT review_reason FROM students WHERE id = ?", (student_id,))
+        row = cur.fetchone()
+        existing_reason = (row[0] or '').strip() if row else ''
+        parts = [p.strip() for p in existing_reason.split(',') if p.strip()]
+        if 'flagged by admin' not in parts:
+            parts.append('flagged by admin')
+        new_reason = ', '.join(parts)
+        conn.execute("UPDATE students SET status = 'FRAUD', review_reason = ? WHERE id = ?", (new_reason, student_id))
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/reject/<int:student_id>', methods=['POST'])
@@ -1248,7 +1326,9 @@ def queue_student_email(student_id):
         if not row or row[2] == 'REJECTED' or not row[1]:
             return False
         conn.execute("UPDATE students SET email_status = 'pending' WHERE id = ?", (student_id,))
-    EMAIL_EXECUTOR.submit(send_email_async, student_id, row[0], row[1], row[2] == 'PENDING')
+    EMAIL_EXECUTOR.submit(send_email_async, student_id, row[0], row[1],
+                         pending=(row[2] == 'PENDING'),
+                         fraud=(row[2] == 'FRAUD'))
     return True
 
 @app.route('/admin/resend/<int:student_id>', methods=['POST'])
@@ -1300,7 +1380,7 @@ def admin_checkin():
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute('''
-            SELECT id, name, roll_number, dept_name, college_name, status, checked_in_at, ticket_secret
+            SELECT id, name, roll_number, dept_name, college_name, status, checked_in_at, ticket_secret, review_reason
             FROM students
             WHERE roll_number = ?
         ''', (roll_number.upper(),))
@@ -1315,6 +1395,12 @@ def admin_checkin():
             return jsonify({'status': 'error', 'message': 'FORGERY DETECTED: Invalid cryptographic signature!'}), 400
 
         # 2. Registration status gate
+        if student['status'] == 'FRAUD':
+            return jsonify({
+                'status': 'error',
+                'message': f"SECURITY ALERT: Profile is flagged for FRAUD ({student['review_reason'] or 'suspected fraud/payment violation'}). Entry prohibited."
+            }), 403
+
         if student['status'] != 'CONFIRMED':
             return jsonify({
                 'status': 'error',
@@ -1443,41 +1529,61 @@ def index():
                             print(f"[WARN] Duplicate payment proof detected matching student id={prev_id}")
                             break
 
-            if is_duplicate_payment:
-                # Force to PENDING review even if OCR was valid
-                final_trans_id = ocr_trans_id.strip() if (ocr_trans_id and ocr_trans_id.strip()) else form.trans_id.data.strip()
-                trans_id_source = 'ocr' if (ocr_trans_id and ocr_trans_id.strip()) else 'manual'
-                student_status = 'PENDING'
-            elif ocr_trans_id and ocr_trans_id.strip():
+            if ocr_trans_id and ocr_trans_id.strip():
                 final_trans_id = ocr_trans_id.strip()
                 trans_id_source = 'ocr'
-                student_status = 'CONFIRMED'
             else:
                 final_trans_id = form.trans_id.data.strip()
                 trans_id_source = 'manual'
-                student_status = 'PENDING'
             
-            final_trans_id = final_trans_id.upper()  # UNIQUE(trans_id) must be case-insensitive
+            final_trans_id = final_trans_id.upper()  # Case-insensitive comparison
+
+            # Check for duplicate transaction ID across registered students (fraudulent reuse)
+            is_duplicate_trans_id = False
+            if final_trans_id:
+                with sqlite3.connect('students.db') as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT id FROM students WHERE UPPER(trans_id) = ?", (final_trans_id,))
+                    match_trans = cur.fetchone()
+                    if match_trans:
+                        is_duplicate_trans_id = True
+                        print(f"[WARN] Duplicate transaction ID detected matching student id={match_trans[0]}")
 
             # Verify the paid amount against the CURRENT fee (the organizer may have changed it since the upload)
             expected_fee = get_expected_fee()
             paid_amount = parse_amount(amount_paid_stored)
             _, amount_status = classify_amount([paid_amount] if paid_amount is not None else [], expected_fee)
 
-            # Anything the server cannot fully verify is held for a human
+            # Classify reasons: Fraud vs Pending review vs Confirmed
             review_reasons = []
+            is_fraud = False
+
             if is_duplicate_payment:
                 review_reasons.append('duplicate screenshot')
-            if trans_id_source == 'manual':
-                review_reasons.append('transaction ID typed manually')
+                is_fraud = True
+
+            if is_duplicate_trans_id:
+                review_reasons.append('duplicate transaction ID')
+                is_fraud = True
+
             if amount_status == 'under':
                 review_reasons.append('underpaid')
+                is_fraud = True
             elif amount_status == 'over':
                 review_reasons.append('overpaid')
             elif amount_status == 'unread':
                 review_reasons.append('amount not readable')
-            if review_reasons:
+
+            if trans_id_source == 'manual':
+                review_reasons.append('transaction ID typed manually')
+
+            if is_fraud:
+                student_status = 'FRAUD'
+            elif review_reasons:
                 student_status = 'PENDING'
+            else:
+                student_status = 'CONFIRMED'
+
             review_reason = ', '.join(review_reasons)
 
             # Destination files in private storage
@@ -1526,8 +1632,6 @@ def index():
                 err_str = str(e).lower()
                 if "roll_number" in err_str:
                     return render_template('index.html', form=form, error="This roll number is already registered. Each student can only register once.")
-                elif "trans_id" in err_str:
-                    return render_template('index.html', form=form, error="This Transaction ID has already been used. Each payment can only be used for one registration.")
                 return render_template('index.html', form=form, error="A registration conflict occurred. Please check your details.")
 
             placard_path = None
@@ -1572,7 +1676,9 @@ def index():
                 raise e
 
             # Offload email sending to background thread pool
-            EMAIL_EXECUTOR.submit(send_email_async, student_id, form.email.data, placard_path, student_status == 'PENDING')
+            EMAIL_EXECUTOR.submit(send_email_async, student_id, form.email.data, placard_path,
+                                  pending=(student_status == 'PENDING'),
+                                  fraud=(student_status == 'FRAUD'))
             
             # Clear any abuse tracking for this IP on successful registration
             ABUSE_TRACKER.pop(client_ip, None)

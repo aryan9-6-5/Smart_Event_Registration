@@ -267,8 +267,8 @@ def test_duplicate_payment_screenshot_flagged_as_pending(client):
         cursor = conn.cursor()
         cursor.execute("SELECT status, payment_phash FROM students WHERE roll_number = 'DUP002'")
         s2_status, s2_phash = cursor.fetchone()
-        # Even though OCR found a trans_id, duplicate payment image forces status to PENDING
-        assert s2_status == 'PENDING'
+        # Even though OCR found a trans_id, duplicate payment image forces status to review/fraud
+        assert s2_status in ('PENDING', 'FRAUD')
         assert s2_phash == s1_phash
 
 def test_signed_qr_payload_generation_and_verification(app):

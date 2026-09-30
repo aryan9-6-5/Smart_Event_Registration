@@ -28,7 +28,27 @@
             </div>
             {% endif %}
 
-            {% if status == 'PENDING' %}
+            {% if status == 'FRAUD' %}
+            <div class="email-error-banner" style="border-left-color: var(--bad); background: var(--bad-bg);">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="color: var(--bad-text);">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+                <div style="color: var(--bad-text);">
+                    <strong style="color: var(--bad-text);">Fraud Detected / User Flagged for Fraud</strong>
+                    Your profile is flagged for fraud and is in review. Your entry ticket has been deactivated.
+                </div>
+            </div>
+            <h2>Fraud Detected / User Flagged for Fraud</h2>
+            <p class="success-message" style="color: var(--bad-text); font-weight: 500;">
+                Your profile is flagged for fraud and is in review by the event administration team.
+                Your ticket is not valid for entry until an administrator manually verifies your payment details and clears this flag.
+            </p>
+            {% if review_reason %}
+            <p style="font-size: 14px; color: var(--muted); margin-top: -10px; margin-bottom: 20px;">
+                <strong>Flagged reason:</strong> {{ review_reason }}
+            </p>
+            {% endif %}
+            {% elif status == 'PENDING' %}
             <h2>Registration Received</h2>
             <p class="success-message">
                 Your payment proof is pending manual review. Your placard is below, but it will only be valid for
@@ -60,12 +80,14 @@
                     </svg>
                     <span>Return Home</span>
                 </a>
+                {% if status != 'FRAUD' %}
                 <button class="btn secondary-btn" onclick="downloadPlacard()">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 18px; height: 18px;">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
                     </svg>
                     <span>Download Placard</span>
                 </button>
+                {% endif %}
             </div>
         </div>
     </main>

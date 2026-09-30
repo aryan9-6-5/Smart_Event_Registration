@@ -14,14 +14,18 @@ OK_COLOR = '#1F7A45'
 OK_BG = '#E3F3EA'
 PENDING_COLOR = '#7A4E0A'
 PENDING_BG = '#FDF3DC'
+FRAUD_COLOR = '#9B1C1C'
+FRAUD_BG = '#FDE8E8'
 
 REASON_TEXT = {
     'duplicate screenshot': 'This payment screenshot looks the same as one that was already submitted.',
+    'duplicate transaction ID': 'This transaction ID has already been used for another registration.',
     'transaction ID typed manually': 'We could not read the transaction ID from your screenshot automatically, '
                                      'so an organizer needs to check the transaction ID you typed.',
     'underpaid': 'The amount on your screenshot is lower than the registration fee.',
     'overpaid': 'The amount on your screenshot is higher than the registration fee.',
     'amount not readable': 'We could not read the amount on your screenshot.',
+    'flagged by admin': 'Your registration was flagged for fraud review by event administrators.',
 }
 
 
@@ -35,10 +39,22 @@ def _reasons(review_reason):
     return [REASON_TEXT[p] for p in parts if p in REASON_TEXT]
 
 
-def _plain(event, details, pending, reasons):
+def _plain(event, details, pending, reasons, fraud=False):
     name = _one_line(details.get('name')) or 'there'
     lines = [f"Hi {name},", ""]
-    if pending:
+    if fraud:
+        lines += [
+            f"Your profile is flagged for fraud and is in review by the {event['title']} organizers.",
+            "",
+            "Your ticket is deactivated and is NOT valid for event entry until an administrator verifies and clears this flag.",
+        ]
+        if reasons:
+            lines += ["", "Why your profile was flagged:"] + [f"- {r}" for r in reasons]
+        lines += [
+            "",
+            "If you believe this is an error, please contact the organizers with your original proof of payment.",
+        ]
+    elif pending:
         lines += [
             f"Thanks for registering for {event['title']}. We received your registration, and an organizer "
             "is reviewing your payment.",
@@ -66,7 +82,7 @@ def _plain(event, details, pending, reasons):
         f"  College:     {_one_line(details.get('college_name'))}",
         f"  Date:        {_one_line(event.get('date'))}",
     ]
-    if not pending:
+    if not pending and not fraud:
         lines += ["", "At the event", "Show the QR code on your ticket at the entrance, either printed or on your phone. "
                       "Each ticket can be scanned once."]
     lines += ["", f"- {event['title']} organizers"]
@@ -78,9 +94,22 @@ def _row(label, value, colors):
             f'<td style="padding:6px 0;color:{colors["text"]};font-size:14px;font-weight:600;">{html.escape(_one_line(value))}</td></tr>')
 
 
-def _html(event, details, colors, pending, reasons, has_image):
+def _html(event, details, colors, pending, reasons, has_image, fraud=False):
     esc = lambda v: html.escape(_one_line(v))
-    if pending:
+    if fraud:
+        pill_bg, pill_fg, pill = FRAUD_BG, FRAUD_COLOR, 'Flagged for fraud'
+        headline = 'Your profile is flagged for fraud and is in review'
+        intro = ('Your profile is flagged for fraud and is in review by the event administration team. '
+                 'Your ticket is <strong>deactivated and not valid for entry</strong> until an administrator verifies and clears this flag.')
+        if reasons:
+            items = ''.join(f'<li style="margin:4px 0;">{html.escape(r)}</li>' for r in reasons)
+            extra = (f'<p style="margin:16px 0 4px;font-weight:600;color:{colors["text"]};">Why your profile was flagged</p>'
+                     f'<ul style="margin:0;padding-left:20px;color:{colors["text"]};font-size:14px;">{items}</ul>'
+                     f'<p style="margin:12px 0 0;font-size:14px;color:{colors["muted"]};">If this is an error, please contact event organizers with your original transaction receipt.</p>')
+        else:
+            extra = ('<p style="margin:16px 0 0;font-size:14px;color:{colors["muted"]};">'
+                     'If this is an error, please contact event organizers with your original transaction receipt.</p>')
+    elif pending:
         pill_bg, pill_fg, pill = PENDING_BG, PENDING_COLOR, 'Under review'
         headline = 'We received your registration'
         intro = ('An organizer is reviewing your payment. Your ticket is attached below, but it is '
@@ -141,10 +170,10 @@ def _html(event, details, colors, pending, reasons, has_image):
 </body></html>'''
 
 
-def build_registration_email(*, sender, to_email, event, colors, details, placard_path, pending=False):
+def build_registration_email(*, sender, to_email, event, colors, details, placard_path, pending=False, fraud=False):
     """Return an EmailMessage with text + HTML bodies and the ticket inline and attached."""
     event = dict(event, title=_one_line(event.get('title')) or 'the event')
-    reasons = _reasons(details.get('review_reason')) if pending else []
+    reasons = _reasons(details.get('review_reason')) if (pending or fraud) else []
 
     image_bytes = None
     try:
@@ -156,10 +185,14 @@ def build_registration_email(*, sender, to_email, event, colors, details, placar
     msg = EmailMessage()
     msg['From'] = formataddr((event['title'], sender))
     msg['To'] = to_email
-    msg['Subject'] = (f"We received your registration for {event['title']} (under review)" if pending
-                      else f"Your ticket for {event['title']}")
-    msg.set_content(_plain(event, details, pending, reasons))
-    msg.add_alternative(_html(event, details, colors, pending, reasons, image_bytes is not None), subtype='html')
+    if fraud:
+        msg['Subject'] = f"ALERT: Your profile for {event['title']} is flagged for fraud and is in review"
+    elif pending:
+        msg['Subject'] = (f"We received your registration for {event['title']} (under review)")
+    else:
+        msg['Subject'] = f"Your ticket for {event['title']}"
+    msg.set_content(_plain(event, details, pending, reasons, fraud=fraud))
+    msg.add_alternative(_html(event, details, colors, pending, reasons, image_bytes is not None, fraud=fraud), subtype='html')
 
     if image_bytes is not None:
         msg.get_payload()[1].add_related(image_bytes, 'image', 'jpeg', cid='<placard>')

@@ -77,6 +77,7 @@
         .stat-label { font-size: 13px; color: var(--muted); }
         .stat-confirmed .stat-num { color: var(--ok-text); }
         .stat-pending .stat-num { color: var(--pending-text); }
+        .stat-fraud .stat-num { color: var(--bad-text); }
         .stat-rejected .stat-num { color: var(--bad-text); }
         .card {
             background: var(--surface);
@@ -102,6 +103,7 @@
             font-weight: 600;
         }
         .badge-pending { background: var(--pending-bg); color: var(--pending-text); }
+        .badge-fraud { background: var(--bad-bg); color: var(--bad-text); font-weight: 700; }
         .badge-amt-exact { background: var(--ok-bg); color: var(--ok-text); }
         .badge-amt-under, .badge-amt-over { background: var(--bad-bg); color: var(--bad-text); }
         .badge-amt-unread { background: var(--pending-bg); color: var(--pending-text); }
@@ -141,6 +143,8 @@
         }
         .btn-approve { background: var(--ok); color: var(--on-status); }
         .btn-approve:hover { background: color-mix(in srgb, var(--ok) 85%, black); }
+        .btn-fraud { background: var(--bad); color: var(--on-status); }
+        .btn-fraud:hover { background: color-mix(in srgb, var(--bad) 85%, black); }
         .btn-reject { background: var(--bad); color: var(--on-status); }
         .btn-reject:hover { background: color-mix(in srgb, var(--bad) 85%, black); }
         .btn-view { background: var(--primary); color: var(--primary-text); }
@@ -178,6 +182,7 @@
             <a class="stat" href="{{ url_for('admin_dashboard') }}"><span class="stat-num" data-stat="total">{{ stats.total }}</span><span class="stat-label">Registered</span></a>
             <a class="stat stat-confirmed" href="{{ url_for('admin_dashboard', status='CONFIRMED') }}"><span class="stat-num" data-stat="confirmed">{{ stats.confirmed }}</span><span class="stat-label">Confirmed</span></a>
             <a class="stat stat-pending" href="{{ url_for('admin_dashboard', status='PENDING') }}"><span class="stat-num" data-stat="pending">{{ stats.pending }}</span><span class="stat-label">Pending review</span></a>
+            <a class="stat stat-fraud" href="{{ url_for('admin_dashboard', status='FRAUD') }}"><span class="stat-num" data-stat="fraud">{{ stats.fraud }}</span><span class="stat-label">Suspected Fraud</span></a>
             <a class="stat stat-rejected" href="{{ url_for('admin_dashboard', status='REJECTED') }}"><span class="stat-num" data-stat="rejected">{{ stats.rejected }}</span><span class="stat-label">Rejected</span></a>
             <div class="stat"><span class="stat-num" data-stat="checked-in">{{ stats.checked_in }}</span><span class="stat-label">Checked in</span></div>
         </div>
@@ -279,6 +284,10 @@
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <button type="submit" class="btn-sm btn-approve">Approve</button>
                             </form>
+                            <form class="action-form" method="POST" action="{{ url_for('admin_mark_fraud', student_id=p.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn-sm btn-fraud" title="Flag as fraud">Mark Fraud</button>
+                            </form>
                             <form class="action-form" method="POST" action="{{ url_for('admin_reject', student_id=p.id) }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <button type="submit" class="btn-sm btn-reject">Reject</button>
@@ -290,6 +299,57 @@
             </table>
             {% else %}
             <div class="empty-state">All caught up! No registrations are pending review.</div>
+            {% endif %}
+        </div>
+
+        <!-- Suspected Fraud Profiles -->
+        <div class="card" id="fraud-card" style="border-left: 4px solid var(--bad);">
+            <h2>
+                🚨 Suspected Fraud & Duplicate Proofs
+                <span class="badge badge-fraud">{{ fraud_students|length }}</span>
+            </h2>
+            {% if fraud_students %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Roll Number</th>
+                        <th>Contact</th>
+                        <th>Transaction ID</th>
+                        <th>Amount</th>
+                        <th>Why Flagged</th>
+                        <th>Proof</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in fraud_students %}
+                    <tr>
+                        <td><strong>{{ f.name }}</strong></td>
+                        <td>{{ f.roll_number }}</td>
+                        <td>{{ f.email }}<br><small>{{ f.phone }}</small></td>
+                        <td><code>{{ f.trans_id }}</code></td>
+                        <td>{% if f.amount_status %}<span class="badge badge-amt-{{ f.amount_status }}">{{ f.amount_status }}</span><br><small>{{ f.amount_paid or '—' }} of {{ f.amount_expected or '—' }}</small>{% else %}<small>not recorded</small>{% endif %}</td>
+                        <td><span class="badge badge-fraud">{{ f.review_reason or 'Suspected fraud' }}</span></td>
+                        <td>
+                            <a href="{{ url_for('admin_payment_proof', student_id=f.id) }}" target="_blank" class="btn-sm btn-view">View Proof</a>
+                        </td>
+                        <td>
+                            <form class="action-form" method="POST" action="{{ url_for('admin_approve', student_id=f.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn-sm btn-approve" title="Override and approve">Approve</button>
+                            </form>
+                            <form class="action-form" method="POST" action="{{ url_for('admin_reject', student_id=f.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn-sm btn-reject" title="Reject registration">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">No profiles are currently flagged for fraud.</div>
             {% endif %}
         </div>
     </main>

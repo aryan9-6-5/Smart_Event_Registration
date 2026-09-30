@@ -33,7 +33,16 @@ def test_env(tmp_path_factory):
 def isolate_db_and_smtp(test_env, monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", test_env["patched_connect"])
     
-    # Mock SMTP sending so tests never hit external network
+    # Mock SMTP sending so tests never hit external network or send real emails
+    import smtplib
+    class DummySMTP:
+        def __init__(self, *a, **k): pass
+        def ehlo(self): pass
+        def starttls(self): pass
+        def login(self, *a, **k): pass
+        def send_message(self, *a, **k): pass
+        def quit(self): pass
+    monkeypatch.setattr(smtplib, "SMTP", DummySMTP)
     monkeypatch.setattr(flask_app, "send_email", lambda to, placard, *a, **k: True)
     monkeypatch.setattr(flask_app, "send_abuse_warning_email", lambda ip, ua, form: True)
     

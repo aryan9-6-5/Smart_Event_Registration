@@ -143,9 +143,20 @@ def test_unexpected_error_does_not_leak_details(client, monkeypatch):
         assert conn.execute("SELECT COUNT(*) FROM students WHERE roll_number='LEAK1'").fetchone()[0] == 0
 
 
-# ── Item 10: transaction IDs are case-insensitively unique ───────────────────
+# ── Item 10: duplicate transaction IDs are flagged as FRAUD, not blocked on main page ──
 def test_trans_id_uniqueness_is_case_insensitive(client):
     r1, _, _ = _register(client, roll_number='CASE1', trans_id='abcde12345')
     r2, _, _ = _register(client, 'red', roll_number='CASE2', trans_id='ABCDE12345')
     assert r1.status_code == 302
-    assert r2.status_code == 200 and b'already been used' in r2.data
+    # Duplicate transaction ID must complete registration and flag as FRAUD (never block on main page)
+    assert r2.status_code == 302
+    assert '/success/' in r2.headers['Location']
+    with sqlite3.connect('students.db') as conn:
+        conn.row_factory = sqlite3.Row
+        s2 = conn.execute("SELECT status, review_reason, public_token FROM students WHERE roll_number = 'CASE2'").fetchone()
+        assert s2['status'] == 'FRAUD'
+        assert 'duplicate transaction ID' in s2['review_reason']
+
+    resp = client.get(f"/success/{s2['public_token']}")
+    assert b'Fraud Detected / User Flagged for Fraud' in resp.data
+    assert b'Your profile is flagged for fraud and is in review' in resp.data

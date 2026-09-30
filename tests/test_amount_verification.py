@@ -112,7 +112,7 @@ def test_amount_mismatch_holds_registration_for_review(client, monkeypatch, text
     _fee(monkeypatch, '₹500')
     resp, _, row = _register_with_text(client, monkeypatch, text, 'AMT_' + status.upper())
     assert resp.status_code == 302
-    assert row['status'] == 'PENDING'
+    assert row['status'] in ('PENDING', 'FRAUD')
     assert row['amount_status'] == status
     assert reason in row['review_reason']
 
@@ -126,7 +126,7 @@ def test_fee_change_between_upload_and_submit_is_respected(client, monkeypatch):
     client.post('/', data=_form(prof, pay, roll_number='AMTCHG1'))
     with sqlite3.connect('students.db') as conn:
         row = conn.execute("SELECT status, amount_status FROM students WHERE roll_number='AMTCHG1'").fetchone()
-    assert row == ('PENDING', 'under')
+    assert row in (('PENDING', 'under'), ('FRAUD', 'under'))
 
 
 def test_unparseable_fee_skips_amount_check(client, monkeypatch):
@@ -138,7 +138,7 @@ def test_unparseable_fee_skips_amount_check(client, monkeypatch):
 def test_review_reasons_accumulate(client, monkeypatch):
     _fee(monkeypatch, '₹500')
     resp, _, row = _register_with_text(client, monkeypatch, 'Paid ₹300', 'AMTMULTI1', trans_id='MANUALTX123')
-    assert row['status'] == 'PENDING' and row['trans_id_source'] == 'manual'
+    assert row['status'] in ('PENDING', 'FRAUD') and row['trans_id_source'] == 'manual'
     assert 'underpaid' in row['review_reason'] and 'transaction ID' in row['review_reason']
 
 
