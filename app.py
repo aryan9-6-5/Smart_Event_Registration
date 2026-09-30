@@ -853,6 +853,98 @@ def admin_payment_proof(student_id):
             abort(404)
         return send_file(os.path.abspath(row[0]))
 
+@app.route('/admin/checkin', methods=['GET', 'POST'])
+@admin_required
+def admin_checkin():
+    if request.method == 'GET':
+        return render_template('admin_checkin.html')
+
+    qr_payload = None
+    if request.is_json:
+        qr_payload = (request.json.get('qr_payload') or '').strip()
+    else:
+        qr_payload = (request.form.get('qr_payload') or '').strip()
+
+    if not qr_payload:
+        return jsonify({'status': 'error', 'message': 'Missing QR payload'}), 400
+
+    if '.' not in qr_payload:
+        return jsonify({'status': 'error', 'message': 'Invalid QR payload format'}), 400
+
+    ticket_id = qr_payload.rsplit('.', 1)[0]
+    config = get_event_config()
+    ticket_prefix = config.get('ticket_prefix', 'TECH24-')
+
+    if ticket_id.startswith(ticket_prefix):
+        roll_number = ticket_id[len(ticket_prefix):].strip()
+    else:
+        roll_number = ticket_id.strip()
+
+    with sqlite3.connect('students.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, name, roll_number, dept_name, college_name, status, checked_in_at, ticket_secret
+            FROM students
+            WHERE roll_number = ?
+        ''', (roll_number.upper(),))
+        student = cur.fetchone()
+
+        if not student:
+            return jsonify({'status': 'error', 'message': 'Ticket ID not found in registration database'}), 404
+
+        # 1. Cryptographic signature verification
+        is_valid, _ = verify_ticket_signature(qr_payload, ticket_secret=student['ticket_secret'])
+        if not is_valid:
+            return jsonify({'status': 'error', 'message': 'FORGERY DETECTED: Invalid cryptographic signature!'}), 400
+
+        # 2. Registration status gate
+        if student['status'] != 'CONFIRMED':
+            return jsonify({
+                'status': 'error',
+                'message': f"Entry Denied: Registration status is {student['status']} (requires CONFIRMED)."
+            }), 403
+
+        # 3. Check if already checked in
+        if student['checked_in_at']:
+            return jsonify({
+                'status': 'already_checked_in',
+                'message': f"ALREADY USED: Checked in earlier at {student['checked_in_at']}",
+                'student': {
+                    'name': student['name'],
+                    'roll_number': student['roll_number'],
+                    'dept_name': student['dept_name'],
+                    'college_name': student['college_name'],
+                    'checked_in_at': student['checked_in_at']
+                }
+            }), 409
+
+        # 4. Atomic idempotent update
+        now_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cur.execute("UPDATE students SET checked_in_at = ? WHERE id = ? AND checked_in_at IS NULL", (now_ts, student['id']))
+        if cur.rowcount == 0:
+            return jsonify({
+                'status': 'already_checked_in',
+                'message': 'ALREADY USED: Checked in by another gate scanner',
+                'student': {
+                    'name': student['name'],
+                    'roll_number': student['roll_number']
+                }
+            }), 409
+
+        return jsonify({
+            'status': 'success',
+            'message': f"Check-in verified! Welcome, {student['name']}!",
+            'student': {
+                'name': student['name'],
+                'roll_number': student['roll_number'],
+                'dept_name': student['dept_name'],
+                'college_name': student['college_name'],
+                'checked_in_at': now_ts
+            }
+        }), 200
+
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     cleanup_old_temp_files()

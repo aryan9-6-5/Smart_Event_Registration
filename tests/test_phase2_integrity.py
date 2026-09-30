@@ -395,6 +395,66 @@ def test_admin_portal_login_and_actions(client):
     assert search_resp.status_code == 200
     assert b"Pending Student" in search_resp.data
 
+def test_admin_checkin_gate(client):
+    """Test: Gate check-in verifies signatures, blocks unconfirmed tickets, and executes atomic idempotent check-in."""
+    import app as flask_app
+
+    # 1. Unauthenticated request redirects
+    unauth = client.post('/admin/checkin', data={'qr_payload': 'TEST'}, follow_redirects=False)
+    assert unauth.status_code == 302
+    assert '/admin/login' in unauth.headers.get('Location', '')
+
+    # Login admin
+    client.post('/admin/login', data={'username': 'admin', 'password': 'admin123'})
+
+    # Create students in DB
+    ticket_secret_valid = "valid_secret_key_123"
+    with sqlite3.connect('students.db') as conn:
+        # Confirmed student
+        conn.execute('''
+            INSERT INTO students (name, email, roll_number, dept_name, college_name, trans_id, phone, status, ticket_secret)
+            VALUES ('Alice Gate', 'alice@gate.com', 'GATE001', 'CSE', 'Tech College', 'TXNGATE01', '9876543210', 'CONFIRMED', ?)
+        ''', (ticket_secret_valid,))
+        # Pending student
+        conn.execute('''
+            INSERT INTO students (name, email, roll_number, dept_name, college_name, trans_id, phone, status, ticket_secret)
+            VALUES ('Bob Pending', 'bob@gate.com', 'GATE002', 'CSE', 'Tech College', 'TXNGATE02', '9876543211', 'PENDING', ?)
+        ''', (ticket_secret_valid,))
+
+    # 2. Forged signature payload fails
+    forged_payload = "TECH24-GATE001.deadbeef12345678"
+    resp_forge = client.post('/admin/checkin', data={'qr_payload': forged_payload})
+    assert resp_forge.status_code == 400
+    json_forge = resp_forge.get_json()
+    assert "FORGERY" in json_forge['message'] or "Invalid" in json_forge['message']
+
+    # 3. Pending student with valid signature is rejected entry
+    bob_payload = flask_app.sign_ticket("TECH24-GATE002", ticket_secret=ticket_secret_valid)
+    resp_pending = client.post('/admin/checkin', data={'qr_payload': bob_payload})
+    assert resp_pending.status_code == 403
+    json_pending = resp_pending.get_json()
+    assert "PENDING" in json_pending['message']
+
+    # 4. Confirmed student with valid signature passes check-in
+    alice_payload = flask_app.sign_ticket("TECH24-GATE001", ticket_secret=ticket_secret_valid)
+    resp_ok = client.post('/admin/checkin', data={'qr_payload': alice_payload})
+    assert resp_ok.status_code == 200
+    json_ok = resp_ok.get_json()
+    assert json_ok['status'] == 'success'
+    assert "Alice Gate" in json_ok['message']
+
+    with sqlite3.connect('students.db') as conn:
+        checked_in_at = conn.execute("SELECT checked_in_at FROM students WHERE roll_number = 'GATE001'").fetchone()[0]
+        assert checked_in_at is not None
+
+    # 5. Second scan of the same ticket fails with already used
+    resp_dup = client.post('/admin/checkin', data={'qr_payload': alice_payload})
+    assert resp_dup.status_code == 409
+    json_dup = resp_dup.get_json()
+    assert json_dup['status'] == 'already_checked_in'
+    assert "ALREADY" in json_dup['message']
+
+
 
 
 

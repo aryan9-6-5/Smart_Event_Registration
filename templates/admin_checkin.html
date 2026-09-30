@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gate Check-in - Event Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .checkin-container {
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .checkin-card {
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            padding: 30px;
+            text-align: center;
+        }
+        .checkin-card h2 {
+            margin-top: 0;
+            color: #1A2A45;
+        }
+        .checkin-input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #CBD5E1;
+            border-radius: 10px;
+            font-size: 16px;
+            box-sizing: border-box;
+            margin: 20px 0;
+            transition: border-color 0.2s;
+        }
+        .checkin-input:focus {
+            outline: none;
+            border-color: #2563EB;
+        }
+        .scan-btn {
+            width: 100%;
+            padding: 14px;
+            background: #2563EB;
+            color: #ffffff;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .result-box {
+            margin-top: 25px;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+            text-align: left;
+        }
+        .result-success { background: #D1FAE5; border: 1px solid #10B981; color: #065F46; }
+        .result-error { background: #FEE2E2; border: 1px solid #EF4444; color: #991B1B; }
+        .result-warning { background: #FEF3C7; border: 1px solid #F59E0B; color: #92400E; }
+    </style>
+</head>
+<body>
+    <header class="admin-nav" style="background: #1A2A45; color: #ffffff; padding: 16px 32px; display: flex; justify-content: space-between;">
+        <h1 style="font-size: 18px; margin: 0;">Smart Event Registration — Gate Check-in</h1>
+        <div>
+            <a href="{{ url_for('admin_dashboard') }}" style="color: #94A3B8; text-decoration: none; margin-right: 15px;">Dashboard</a>
+            <a href="{{ url_for('admin_logout') }}" style="color: #94A3B8; text-decoration: none;">Sign Out</a>
+        </div>
+    </header>
+
+    <main class="checkin-container">
+        <div class="checkin-card">
+            <h2>Scan Attendee QR Code</h2>
+            <p style="color: #64748B; font-size: 14px;">Scan the QR code on the attendee's placard using a barcode/QR scanner or paste the raw payload below.</p>
+
+            <form id="checkinForm" onsubmit="handleCheckin(event)">
+                <input type="text" id="qrPayload" class="checkin-input" placeholder="Scan or paste QR payload (e.g. TECH24-ROLL.sig)..." autofocus autocomplete="off">
+                <button type="submit" class="scan-btn">Verify & Check In</button>
+            </form>
+
+            <div id="resultBox" class="result-box">
+                <h3 id="resultTitle" style="margin-top: 0;"></h3>
+                <p id="resultMsg"></p>
+                <div id="studentDetails"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        async function handleCheckin(e) {
+            e.preventDefault();
+            const input = document.getElementById('qrPayload');
+            const payload = input.value.trim();
+            if (!payload) return;
+
+            const box = document.getElementById('resultBox');
+            const title = document.getElementById('resultTitle');
+            const msg = document.getElementById('resultMsg');
+            const details = document.getElementById('studentDetails');
+
+            box.style.display = 'none';
+            box.className = 'result-box';
+
+            try {
+                const resp = await fetch('{{ url_for("admin_checkin") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': '{{ csrf_token() }}'
+                    },
+                    body: new URLSearchParams({ 'qr_payload': payload })
+                });
+
+                const data = await resp.json();
+                box.style.display = 'block';
+
+                if (resp.status === 200) {
+                    box.classList.add('result-success');
+                    title.textContent = '✓ Entry Approved';
+                    msg.textContent = data.message;
+                    if (data.student) {
+                        details.innerHTML = `<strong>Name:</strong> ${data.student.name}<br>
+                                             <strong>Roll:</strong> ${data.student.roll_number}<br>
+                                             <strong>Dept:</strong> ${data.student.dept_name}<br>
+                                             <strong>College:</strong> ${data.student.college_name}`;
+                    }
+                } else if (resp.status === 409) {
+                    box.classList.add('result-warning');
+                    title.textContent = '⚠ Already Checked In';
+                    msg.textContent = data.message;
+                } else {
+                    box.classList.add('result-error');
+                    title.textContent = '✗ Entry Denied';
+                    msg.textContent = data.message;
+                }
+            } catch (err) {
+                box.style.display = 'block';
+                box.classList.add('result-error');
+                title.textContent = 'Network Error';
+                msg.textContent = 'Failed to communicate with check-in gate server.';
+            }
+
+            input.value = '';
+            input.focus();
+        }
+    </script>
+</body>
+</html>
