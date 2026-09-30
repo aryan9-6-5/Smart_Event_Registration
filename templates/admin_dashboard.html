@@ -55,6 +55,29 @@
             font-weight: 600;
             cursor: pointer;
         }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            text-decoration: none;
+            color: var(--text);
+        }
+        a.stat:hover { border-color: var(--primary); }
+        .stat-num { font-size: 26px; font-weight: 600; }
+        .stat-label { font-size: 13px; color: var(--muted); }
+        .stat-confirmed .stat-num { color: var(--ok-text); }
+        .stat-pending .stat-num { color: var(--pending-text); }
+        .stat-rejected .stat-num { color: var(--bad-text); }
         .card {
             background: var(--surface);
             border-radius: 12px;
@@ -146,11 +169,24 @@
             {% endif %}
         </form>
 
-        {% if q %}
-        <!-- Search Results -->
-        <div class="card">
-            <h2>Search Results for "{{ q }}" ({{ search_results|length }})</h2>
-            {% if search_results %}
+        <!-- Summary -->
+        <div class="stats">
+            <a class="stat" href="{{ url_for('admin_dashboard') }}"><span class="stat-num" data-stat="total">{{ stats.total }}</span><span class="stat-label">Registered</span></a>
+            <a class="stat stat-confirmed" href="{{ url_for('admin_dashboard', status='CONFIRMED') }}"><span class="stat-num" data-stat="confirmed">{{ stats.confirmed }}</span><span class="stat-label">Confirmed</span></a>
+            <a class="stat stat-pending" href="{{ url_for('admin_dashboard', status='PENDING') }}"><span class="stat-num" data-stat="pending">{{ stats.pending }}</span><span class="stat-label">Pending review</span></a>
+            <a class="stat stat-rejected" href="{{ url_for('admin_dashboard', status='REJECTED') }}"><span class="stat-num" data-stat="rejected">{{ stats.rejected }}</span><span class="stat-label">Rejected</span></a>
+            <div class="stat"><span class="stat-num" data-stat="checked-in">{{ stats.checked_in }}</span><span class="stat-label">Checked in</span></div>
+        </div>
+
+        <!-- Registrations -->
+        <div class="card" id="registrations">
+            <h2>
+                {% if q %}Search results for "{{ q }}"
+                {% elif status_filter %}{{ status_filter|capitalize }} registrations
+                {% else %}All registrations{% endif %}
+                ({{ registrations|length }})
+            </h2>
+            {% if registrations %}
             <table>
                 <thead>
                     <tr>
@@ -164,7 +200,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for s in search_results %}
+                    {% for s in registrations %}
                     <tr>
                         <td><strong>{{ s.name }}</strong></td>
                         <td>{{ s.roll_number }}</td>
@@ -195,10 +231,9 @@
                 </tbody>
             </table>
             {% else %}
-            <div class="empty-state">No matching attendees found.</div>
+            <div class="empty-state">{% if q %}No attendees match your search.{% else %}No registrations yet.{% endif %}</div>
             {% endif %}
         </div>
-        {% endif %}
 
         <!-- Pending Approvals -->
         <div class="card">

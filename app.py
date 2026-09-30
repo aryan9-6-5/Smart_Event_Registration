@@ -963,10 +963,13 @@ def admin_logout():
 @admin_required
 def admin_dashboard():
     q = request.args.get('q', '').strip()
+    status_filter = request.args.get('status', '').upper()
+    if status_filter not in ('PENDING', 'CONFIRMED', 'REJECTED'):
+        status_filter = ''
     with sqlite3.connect('students.db') as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        
+
         # Pending students awaiting verification
         cur.execute('''
             SELECT id, name, roll_number, email, phone, trans_id, ocr_trans_id, trans_id_source, created_at
@@ -976,20 +979,36 @@ def admin_dashboard():
         ''')
         pending_students = cur.fetchall()
 
-        # Search results if query provided
-        search_results = []
-        if q:
-            cur.execute('''
-                SELECT id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at, email_status
-                FROM students
-                WHERE roll_number LIKE ? OR name LIKE ? OR trans_id LIKE ?
-                ORDER BY id DESC
-            ''', (f"%{q}%", f"%{q}%", f"%{q}%"))
-            search_results = cur.fetchall()
+        # Overall counts for the summary strip
+        cur.execute('''
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(status = 'CONFIRMED'), 0) AS confirmed,
+                   COALESCE(SUM(status = 'PENDING'), 0) AS pending,
+                   COALESCE(SUM(status = 'REJECTED'), 0) AS rejected,
+                   COALESCE(SUM(checked_in_at IS NOT NULL), 0) AS checked_in
+            FROM students
+        ''')
+        stats = cur.fetchone()
 
-    return render_template('admin_dashboard.html', 
+        # Registrations list: search results when a query is given, else the (optionally filtered) latest entries
+        columns = "id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at, email_status"
+        if q:
+            cur.execute(f'''
+                SELECT {columns} FROM students
+                WHERE roll_number LIKE ? OR name LIKE ? OR trans_id LIKE ?
+                ORDER BY id DESC LIMIT 200
+            ''', (f"%{q}%", f"%{q}%", f"%{q}%"))
+        elif status_filter:
+            cur.execute(f"SELECT {columns} FROM students WHERE status = ? ORDER BY id DESC LIMIT 200", (status_filter,))
+        else:
+            cur.execute(f"SELECT {columns} FROM students ORDER BY id DESC LIMIT 200")
+        registrations = cur.fetchall()
+
+    return render_template('admin_dashboard.html',
         pending_students=pending_students,
-        search_results=search_results,
+        registrations=registrations,
+        stats=stats,
+        status_filter=status_filter,
         q=q)
 
 @app.route('/admin/approve/<int:student_id>', methods=['POST'])
