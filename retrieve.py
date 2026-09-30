@@ -45,11 +45,15 @@ def create_backup():
 
     # Flush any SQLite WAL entries into the database before zipping
     if os.path.exists(DB_FILE):
+        conn = None
         try:
-            with sqlite3.connect(DB_FILE, timeout=5) as conn:
-                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            conn = sqlite3.connect(DB_FILE, timeout=5)
+            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         except Exception as e:
             print(f"   [INFO] WAL checkpoint skipped: {e}")
+        finally:
+            if conn:
+                conn.close()
     
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         # 1. Add database file(s)
@@ -109,12 +113,16 @@ def delete_database():
         print("ℹ️ Database does not exist, nothing to delete.")
         return
 
-    # Checkpoint WAL first
+    # Checkpoint WAL first and close connection explicitly
+    conn = None
     try:
-        with sqlite3.connect(DB_FILE, timeout=5) as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn = sqlite3.connect(DB_FILE, timeout=5)
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     except Exception:
         pass
+    finally:
+        if conn:
+            conn.close()
 
     # Try removing the files directly
     deleted = False
@@ -127,19 +135,26 @@ def delete_database():
             except PermissionError:
                 # File is locked by a running process (e.g. Waitress). Wipe tables via SQL.
                 print(f"⚠️ {db_related} is locked by active server process; clearing all rows via SQL...")
+                sql_conn = None
                 try:
-                    with sqlite3.connect(DB_FILE, timeout=5) as conn:
-                        for tbl in ['students', 'uploads', 'abuse_attempts']:
-                            try:
-                                conn.execute(f"DELETE FROM {tbl}")
-                            except Exception:
-                                pass
-                        conn.execute("VACUUM")
-                        conn.commit()
+                    sql_conn = sqlite3.connect(DB_FILE, timeout=5)
+                    sql_conn.isolation_level = None  # autocommit mode allows VACUUM
+                    for tbl in ['students', 'uploads', 'abuse_attempts']:
+                        try:
+                            sql_conn.execute(f"DELETE FROM {tbl}")
+                        except Exception:
+                            pass
+                    try:
+                        sql_conn.execute("VACUUM")
+                    except Exception:
+                        pass
                     print(f"✅ Cleared all student and upload rows in {DB_FILE} via SQL.")
                     deleted = True
                 except Exception as err:
                     print(f"❌ Failed to clear database via SQL: {err}")
+                finally:
+                    if sql_conn:
+                        sql_conn.close()
             except Exception as e:
                 print(f"❌ Failed to delete {db_related}: {e}")
 

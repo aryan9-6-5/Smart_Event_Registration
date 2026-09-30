@@ -155,3 +155,29 @@ def test_write_theme_from_banner_cli(tmp_path):
     written = json.loads(out.read_text())
     T.validate_theme(written)
     assert written['banner'] == 'theme/banner.jpg'
+
+
+def test_prepare_banner_with_jpeg_extension(tmp_path, monkeypatch):
+    banner_src = tmp_path / 'banner.jpeg'
+    Image.new('RGB', (800, 200), '#FF0000').save(banner_src)
+    dest = tmp_path / 'out.jpg'
+    
+    monkeypatch.setattr(T, 'BASE_DIR', str(tmp_path))
+    res = T.prepare_banner({'banner': 'banner.jpeg'}, dest=str(dest))
+    assert res == 'theme/banner.jpg'
+    assert os.path.exists(str(dest))
+
+
+def test_prepare_banner_missing_file_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(T, 'BASE_DIR', str(tmp_path))
+    res = T.prepare_banner({'banner': 'non_existent.jpg'}, dest=str(tmp_path / 'out.jpg'))
+    assert res is None
+
+
+def test_prepare_banner_corrupted_file_returns_none(tmp_path, monkeypatch):
+    corrupt = tmp_path / 'corrupt.jpg'
+    corrupt.write_bytes(b'not an image at all')
+    monkeypatch.setattr(T, 'BASE_DIR', str(tmp_path))
+    res = T.prepare_banner({'banner': 'corrupt.jpg'}, dest=str(tmp_path / 'out.jpg'))
+    assert res is None
+

@@ -184,3 +184,27 @@ def test_email_includes_banner_when_available(tmp_path, placard):
     # Attachments list should still only contain the ticket attachment, not inline parts
     attachments = [p for p in msg.iter_attachments()]
     assert [a.get_filename() for a in attachments] == ['ticket-23881A6623.jpg']
+
+
+def test_email_missing_banner_file_handled_gracefully(tmp_path, placard):
+    msg = EB.build_registration_email(
+        sender='events@example.com', to_email='a@example.com', event=EVENT,
+        colors=COLORS, details=DETAILS, placard_path=placard,
+        banner_path=str(tmp_path / 'non_existent_banner.jpg')
+    )
+    _, html = _parts(msg)
+    assert 'cid:banner' not in html
+    attachments = [p for p in msg.iter_attachments()]
+    assert [a.get_filename() for a in attachments] == ['ticket-23881A6623.jpg']
+
+
+def test_email_none_font_handled_gracefully(placard):
+    msg = EB.build_registration_email(
+        sender='events@example.com', to_email='a@example.com', event=EVENT,
+        colors=COLORS, details=DETAILS, placard_path=placard,
+        font=None
+    )
+    _, html = _parts(msg)
+    assert '<html' in html.lower()
+    assert 'fonts.googleapis.com' in html
+

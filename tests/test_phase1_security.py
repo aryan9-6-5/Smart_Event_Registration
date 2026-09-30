@@ -125,6 +125,41 @@ def test_success_page_by_roll_number_returns_404(client):
     assert client.get('/success/CHAR1001').status_code == 404
 
 
+def test_abuse_localhost_never_blocked():
+    """Verify loopback addresses are never locked out."""
+    import app as flask_app
+    import time
+    flask_app.FLAGGED_IPS['127.0.0.1'] = time.time()
+    flask_app.FLAGGED_IPS['::1'] = time.time()
+    assert flask_app.is_ip_blocked('127.0.0.1') is False
+    assert flask_app.is_ip_blocked('::1') is False
+
+
+def test_abuse_remote_ip_blocked_after_threshold_and_expires(monkeypatch):
+    """Verify remote IP is flagged upon reaching threshold and unblocks after cooldown."""
+    import app as flask_app
+    import time
+    ip = '198.51.100.42'
+    flask_app.ABUSE_TRACKER[ip] = []
+    flask_app.FLAGGED_IPS.pop(ip, None)
+    
+    # 4 attempts: not yet blocked
+    for _ in range(4):
+        blocked = flask_app.track_failed_attempt(ip, 'Mozilla', 'test')
+        assert blocked is False
+    assert flask_app.is_ip_blocked(ip) is False
+    
+    # 5th attempt: threshold reached
+    blocked = flask_app.track_failed_attempt(ip, 'Mozilla', 'test')
+    assert blocked is True
+    assert flask_app.is_ip_blocked(ip) is True
+    
+    # Simulate cooldown expiration
+    flask_app.FLAGGED_IPS[ip] = time.time() - (flask_app.ABUSE_COOLDOWN_SECONDS + 1)
+    assert flask_app.is_ip_blocked(ip) is False
+
+
+
 
 
 
