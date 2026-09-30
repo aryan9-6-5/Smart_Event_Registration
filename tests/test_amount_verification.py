@@ -5,6 +5,7 @@ import sqlite3
 from decimal import Decimal
 
 import pytest
+from PIL import Image
 
 import app as flask_app
 from test_phase4_audit import _upload, _form
@@ -159,3 +160,101 @@ def test_no_hardcoded_currency_amounts_in_templates_or_js():
     for path in files:
         with open(path, encoding='utf-8') as f:
             assert not re.search(r'(₹|Rs\.?|INR)\s*\d', f.read()), os.path.basename(path)
+
+
+# ── rupee sign misread as a leading digit ('₹8,200.00' read as '28,200.00') ──
+def test_trailing_junk_after_amount_is_tolerated():
+    assert flask_app.extract_amounts('8,200.00 ©') == [Decimal('8200.00')]
+
+
+def test_reading_with_spurious_leading_digit_is_dropped_when_crop_disagrees():
+    values = [Decimal('28200.00'), Decimal('8200.00')]
+    assert flask_app.drop_misread_currency_glyph(values) == [Decimal('8200.00')]
+
+
+@pytest.mark.parametrize('values', [
+    [Decimal('28200.00')],              # nothing to compare against: keep what we have
+    [Decimal('2500'), Decimal('30')],   # unrelated numbers
+])
+def test_genuine_values_are_not_dropped_without_evidence(values):
+    assert flask_app.drop_misread_currency_glyph(values) == values
+
+
+def test_short_reading_wins_over_same_reading_with_extra_leading_two():
+    assert flask_app.drop_misread_currency_glyph([Decimal('2500'), Decimal('500')]) == [Decimal('500')]
+
+
+def test_payment_amounts_combine_full_text_and_amount_crops(monkeypatch, dummy_image):
+    _ocr(monkeypatch, 'Sent\n28,200.00\nTransaction ID: 212111551756')
+    monkeypatch.setattr(flask_app, 'read_amount_regions', lambda path: ['8,200.00 ©'])
+    text = flask_app.read_image_text(dummy_image)
+    assert flask_app.extract_payment_amounts(dummy_image, text) == [Decimal('8200.00')]
+
+
+def test_upload_recovers_true_amount_when_rupee_sign_read_as_two(client, monkeypatch):
+    _fee(monkeypatch, '₹500')
+    _ocr(monkeypatch, 'Sent\n2500.00\nTransaction ID: 212111551756')
+    monkeypatch.setattr(flask_app, 'read_amount_regions', lambda path: ['500.00'])
+    resp = _upload(client, 'payment')
+    assert resp['amount_status'] == 'exact'
+
+
+# ── static assets are cache-busted so students never run stale scripts ───────
+def test_static_assets_carry_a_version_query(client):
+    html = client.get('/').get_data(as_text=True)
+    assert re.search(r'/static/js/app\.js\?v=\w+', html)
+    assert re.search(r'/static/css/styles\.css\?v=\w+', html)
+
+
+# ── glyph-shape check: is the leading '2' really the rupee sign? ─────────────
+def _fake_word_image(shapes):
+    """White 400x100 image; shapes = list of (kind, x0, x1) drawn between y=20..80."""
+    from PIL import ImageDraw
+    img = Image.new('L', (400, 100), 255)
+    d = ImageDraw.Draw(img)
+    for kind, x0, x1 in shapes:
+        if kind == 'rect':
+            d.rectangle([x0, 20, x1, 80], fill=0)
+        else:
+            d.ellipse([x0, 20, x1, 80], fill=0)
+    return img
+
+
+def _fake_boxes(chars_and_spans):
+    # pytesseract boxes use a bottom-left origin: "char left bottom right top page"
+    return '\n'.join(f'{c} {x0} {100 - 80} {x1} {100 - 20} 0' for c, (x0, x1) in chars_and_spans)
+
+
+def test_first_glyph_that_differs_from_the_same_digit_later_is_the_currency_sign(monkeypatch):
+    img = _fake_word_image([('rect', 10, 50), ('ellipse', 70, 110), ('ellipse', 130, 170)])
+    monkeypatch.setattr(flask_app.pytesseract, 'image_to_boxes',
+                        lambda *a, **k: _fake_boxes([('2', (10, 50)), ('8', (70, 110)), ('2', (130, 170))]))
+    assert flask_app.strip_misread_currency_glyph(img) == '82'
+
+
+def test_first_glyph_identical_to_the_same_digit_later_is_kept(monkeypatch):
+    img = _fake_word_image([('ellipse', 10, 50), ('rect', 70, 110), ('ellipse', 130, 170)])
+    monkeypatch.setattr(flask_app.pytesseract, 'image_to_boxes',
+                        lambda *a, **k: _fake_boxes([('2', (10, 50)), ('8', (70, 110)), ('2', (130, 170))]))
+    assert flask_app.strip_misread_currency_glyph(img) is None
+
+
+def test_no_reference_glyph_means_no_change(monkeypatch):
+    img = _fake_word_image([('rect', 10, 50), ('ellipse', 70, 110), ('ellipse', 130, 170)])
+    monkeypatch.setattr(flask_app.pytesseract, 'image_to_boxes',
+                        lambda *a, **k: _fake_boxes([('2', (10, 50)), ('5', (70, 110)), ('0', (130, 170))]))
+    assert flask_app.strip_misread_currency_glyph(img) is None
+
+
+def test_ambiguous_leading_two_equal_to_fee_is_not_auto_confirmed():
+    # '2500' with fee 500 could be a misread rupee sign OR a genuine 2500 payment: never 'exact'
+    paid, status = flask_app.classify_amount([Decimal('2500')], Decimal('500'))
+    assert status != 'exact'
+
+
+@pytest.mark.parametrize('value,shown', [
+    (Decimal('8200.00'), '8,200'), (Decimal('500'), '500'), (Decimal('1250.50'), '1,250.50'), (Decimal('300.00'), '300'),
+])
+def test_amount_message_formats_money_readably(monkeypatch, value, shown):
+    _fee(monkeypatch, '₹500')
+    assert f'₹{shown}' in flask_app.amount_message(value, 'over')

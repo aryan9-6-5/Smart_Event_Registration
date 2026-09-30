@@ -142,10 +142,19 @@ def get_event_config():
 THEME = theme_module.load_theme()
 BANNER_STATIC_PATH = theme_module.prepare_banner(THEME)
 
+def static_v(filename):
+    """Static file URL with a modification-time query so browsers never serve a stale script or stylesheet."""
+    try:
+        version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+    except OSError:
+        version = 0
+    return url_for('static', filename=filename, v=version)
+
 @app.context_processor
 def inject_event_config():
     config = get_event_config()
     return {
+        'static_v': static_v,
         't': THEME,
         'banner_url': url_for('static', filename=BANNER_STATIC_PATH) if BANNER_STATIC_PATH else None,
         'event_title': config['title'],
@@ -312,7 +321,7 @@ _AMOUNT = r'(\d[\d,]*(?:\.\d{1,2})?)'
 _AMOUNT_PATTERNS = [
     re.compile(r'(?:₹|\brs\b\.?|\binr\b|[€¥%])\s*' + _AMOUNT, re.IGNORECASE),
     re.compile(r'\b(?:amount|paid|paying|sent|total)\b[^\d\n]{0,20}' + _AMOUNT, re.IGNORECASE),
-    re.compile(r'^\s*[^\w\s]?\s*' + _AMOUNT + r'\s*$', re.MULTILINE),  # big amount alone on its line
+    re.compile(r'^\s*[^\w\s]?\s*' + _AMOUNT + r'\s*[^\w\s]{0,2}\s*$', re.MULTILINE),  # big amount alone on its line
 ]
 
 def extract_amounts(text):
@@ -328,6 +337,104 @@ def extract_amounts(text):
                 found.append(value)
     return found
 
+def drop_misread_currency_glyph(values):
+    """OCR often reads the rupee sign as a digit '2' ('₹8,200.00' -> '28,200.00').
+
+    When the same amount is also read WITHOUT that leading '2' (from a tight crop around it),
+    the longer reading is the misread one, so it is dropped. Without such evidence values are kept.
+    """
+    dropped = set()
+    for value in values:
+        text = format(value, 'f')
+        if len(text) > 1 and text[0] == '2':
+            try:
+                shorter = Decimal(text[1:])
+            except InvalidOperation:
+                continue
+            if shorter > 0 and shorter in values:
+                dropped.add(value)
+    return [v for v in values if v not in dropped]
+
+_GLYPH_SAME_MIN_OVERLAP = 0.75  # same character in the same font overlaps ~1.0; a rupee sign vs '2' about 0.35
+
+def _glyph_bitmap(gray_image, box, size=(32, 40)):
+    """Binarised, size-normalised pixels of one character box."""
+    glyph = gray_image.crop(box).resize(size)
+    pixels = list(glyph.getdata())
+    threshold = (min(pixels) + max(pixels)) / 2
+    return [p < threshold for p in pixels]
+
+def _glyph_overlap(a, b):
+    union = sum(1 for x, y in zip(a, b) if x or y)
+    return sum(1 for x, y in zip(a, b) if x and y) / union if union else 1.0
+
+def strip_misread_currency_glyph(gray_word_image):
+    """Return the word text without its first character when that glyph is not the digit OCR claims.
+
+    The first glyph is compared with a later occurrence of the SAME digit in the same word (same font,
+    same size). A real digit matches almost perfectly; a rupee sign misread as that digit does not.
+    Returns None when there is nothing to correct or no reference glyph to compare with.
+    """
+    try:
+        height = gray_word_image.height
+        chars = []
+        for line in pytesseract.image_to_boxes(gray_word_image, config='--psm 7').splitlines():
+            char, left, bottom, right, top = line.split(' ')[:5]
+            chars.append((char, (int(left), height - int(top), int(right), height - int(bottom))))
+    except Exception as e:
+        print("Glyph box OCR error:", e)
+        return None
+    if len(chars) < 3 or not chars[0][0].isdigit():
+        return None
+    first_char, first_box = chars[0]
+    reference = next((box for char, box in chars[1:] if char == first_char), None)
+    if reference is None:
+        return None
+    if _glyph_overlap(_glyph_bitmap(gray_word_image, first_box), _glyph_bitmap(gray_word_image, reference)) >= _GLYPH_SAME_MIN_OVERLAP:
+        return None
+    return ''.join(char for char, _ in chars[1:])
+
+def read_amount_regions(image_path):
+    """Re-read every amount-looking number from enlarged crops; returns candidate texts.
+
+    Combines (1) a tight crop whose first glyph is dropped when it is provably not a digit and
+    (2) wider crops, which often read the rupee sign as a symbol instead of a digit.
+    """
+    texts = []
+    try:
+        with Image.open(image_path) as img:
+            img = img.convert('RGB')
+            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+            for i, word in enumerate(data['text']):
+                if not re.fullmatch(r'[^\w]?\d[\d,]*\.\d{1,2}|[^\w]?\d{1,3}(?:,\d{2,3})+', word.strip()):
+                    continue
+                x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+
+                def crop_gray(pad_x, pad_y=20):
+                    box = (max(0, x - pad_x), max(0, y - pad_y), min(img.width, x + w + pad_x), min(img.height, y + h + pad_y))
+                    crop = img.crop(box).convert('L')
+                    return crop.resize((crop.width * 3, crop.height * 3), Image.Resampling.LANCZOS)
+
+                corrected = strip_misread_currency_glyph(crop_gray(10, 10))
+                if corrected:
+                    texts.append(corrected)
+                for pad_x in (60, 80):
+                    wide = crop_gray(pad_x)
+                    for psm in (8, 7):
+                        texts.append(pytesseract.image_to_string(wide, config=f'--psm {psm}').strip())
+    except Exception as e:
+        print("Amount region OCR error:", e)
+    return texts
+
+def extract_payment_amounts(image_path, text):
+    """Amounts from the full OCR text plus focused crops, with rupee-sign misreads removed."""
+    values = extract_amounts(text)
+    for region_text in read_amount_regions(image_path):
+        for value in extract_amounts(region_text):
+            if value not in values:
+                values.append(value)
+    return drop_misread_currency_glyph(values)
+
 def classify_amount(candidates, expected):
     """Return (paid, status): exact / over / under / unread, or unchecked when no fee is configured."""
     if expected is None:
@@ -339,6 +446,11 @@ def classify_amount(candidates, expected):
     paid = candidates[0]
     return paid, ('over' if paid > expected else 'under')
 
+def format_money(value):
+    """Decimal('8200.00') -> '8,200'; Decimal('1250.50') -> '1,250.50'."""
+    text = f"{value:,.2f}"
+    return text[:-3] if text.endswith('.00') else text
+
 def amount_message(paid, status):
     """Plain-language feedback shown to the student right after the payment upload."""
     fee = fee_display()
@@ -346,7 +458,7 @@ def amount_message(paid, status):
     if status == 'exact':
         return f"Payment amount verified ({fee})."
     if status in ('over', 'under'):
-        return f"We read {symbol}{paid} but the fee is {fee}. Your registration will be held for manual review."
+        return f"We read {symbol}{format_money(paid)} but the fee is {fee}. Your registration will be held for manual review."
     if status == 'unread':
         return "We couldn't read the amount from this screenshot. Your registration will be held for manual review."
     return ""
@@ -947,7 +1059,7 @@ def upload_file():
             ocr_text = read_image_text(filepath)
             candidate, confident = extract_transaction_id(filepath, text=ocr_text)
             trans_id = candidate if confident else None  # only trusted OCR results are stored
-            paid, amount_status = classify_amount(extract_amounts(ocr_text), get_expected_fee())
+            paid, amount_status = classify_amount(extract_payment_amounts(filepath, ocr_text), get_expected_fee())
             amount_paid = str(paid) if paid is not None else None
             payment_phash = compute_image_phash(filepath)
             print(f"OCR extracted Transaction ID: {trans_id}, amount: {amount_paid} ({amount_status}), phash: {payment_phash}")

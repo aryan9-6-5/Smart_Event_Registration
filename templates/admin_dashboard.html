@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Smart Event Registration</title>
     {% include '_theme_head.html' %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ static_v('css/styles.css') }}">
     <style>
         .admin-nav {
             background: var(--primary);
@@ -211,7 +211,7 @@
                         <td>{{ s.roll_number }}</td>
                         <td>{{ s.email }}<br><small>{{ s.phone }}</small></td>
                         <td>{{ s.trans_id }}</td>
-                        <td>{% if s.amount_status %}<span class="badge badge-amt-{{ s.amount_status }}">{{ s.amount_status }}</span><br><small>{{ s.amount_paid or '—' }} of {{ s.amount_expected or '—' }}</small>{% else %}—{% endif %}</td>
+                        <td>{% if s.amount_status %}<span class="badge badge-amt-{{ s.amount_status }}">{{ s.amount_status }}</span><br><small>{{ s.amount_paid or '—' }} of {{ s.amount_expected or '—' }}</small>{% else %}<small>not recorded</small>{% endif %}</td>
                         <td>
                             <span class="badge badge-{{ s.status|lower }}">{{ s.status }}</span>
                         </td>
@@ -266,7 +266,7 @@
                         <td>{{ p.roll_number }}</td>
                         <td>{{ p.email }}<br><small>{{ p.phone }}</small></td>
                         <td><code>{{ p.trans_id }}</code></td>
-                        <td>{% if p.amount_status %}<span class="badge badge-amt-{{ p.amount_status }}">{{ p.amount_status }}</span><br><small>{{ p.amount_paid or '—' }} of {{ p.amount_expected or '—' }}</small>{% else %}—{% endif %}</td>
+                        <td>{% if p.amount_status %}<span class="badge badge-amt-{{ p.amount_status }}">{{ p.amount_status }}</span><br><small>{{ p.amount_paid or '—' }} of {{ p.amount_expected or '—' }}</small>{% else %}<small>not recorded</small>{% endif %}</td>
                         <td>
                             <span class="badge badge-{{ p.trans_id_source|lower }}">{{ p.trans_id_source }}</span>
                         </td>

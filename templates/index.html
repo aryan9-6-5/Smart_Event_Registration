@@ -7,7 +7,7 @@
     <title>College Tech Summit 2024</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {% include '_theme_head.html' %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ static_v('css/styles.css') }}">
 <script>
     // Globally scoped event configurations for JavaScript dynamic updates
     const EVENT_CONFIG = {
@@ -271,6 +271,6 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ static_v('js/app.js') }}"></script>
 </body>
 </html>
