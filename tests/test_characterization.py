@@ -61,10 +61,11 @@ def test_full_registration_happy_path(client, monkeypatch):
     }
     reg_resp = client.post('/', data=form_data, follow_redirects=False)
     assert reg_resp.status_code == 302
-    assert '/success/' in reg_resp.headers['Location']
+    success_url = reg_resp.headers['Location']
+    assert '/success/' in success_url
 
-
-    # 4. Success page loads
-    success_resp = client.get('/success/CHAR1001')
+    # 4. Success page loads via unguessable token
+    success_resp = client.get(success_url)
     assert success_resp.status_code == 200
     assert b"Registration Successful" in success_resp.data
+
