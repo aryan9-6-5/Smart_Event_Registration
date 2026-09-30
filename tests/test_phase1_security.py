@@ -30,4 +30,33 @@ def test_storage_directories_exist():
         path = os.path.join('storage', sub)
         assert os.path.isdir(path), f"Expected directory {path} to exist"
 
+def test_upload_returns_token_and_inserts_in_uploads_table(client):
+    """Test that /upload returns an opaque token and records it in the uploads table."""
+    import io
+    import sqlite3
+    from PIL import Image
+
+    file_bytes = io.BytesIO()
+    img = Image.new('RGB', (100, 100), color='purple')
+    img.save(file_bytes, 'PNG')
+    file_bytes.seek(0)
+
+    resp = client.post('/upload', data={
+        'file': (file_bytes, 'profile.png'),
+        'type': 'profile'
+    }, content_type='multipart/form-data')
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert 'token' in data
+    assert 'path' not in data  # No raw server paths exposed to the client
+
+    with sqlite3.connect('students.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT kind, stored_name FROM uploads WHERE token = ?", (data['token'],))
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[0] == 'profile'
+
+
 

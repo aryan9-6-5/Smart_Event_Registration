@@ -247,11 +247,10 @@ TEST_DATA = {
 
 def init_db():
     # Clear intermediate/temp uploads folder on server start
-    tmp_dir = "static/uploads/tmp"
-    if os.path.exists(tmp_dir):
+    if os.path.exists(STORAGE_TMP):
         try:
-            for f in os.listdir(tmp_dir):
-                file_path = os.path.join(tmp_dir, f)
+            for f in os.listdir(STORAGE_TMP):
+                file_path = os.path.join(STORAGE_TMP, f)
                 if os.path.isfile(file_path):
                     os.remove(file_path)
             print("Temporary upload folder cleared on startup.")
@@ -285,6 +284,14 @@ def init_db():
             user_agent TEXT,
             form_data_snippet TEXT,
             created_at TEXT NOT NULL
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS uploads (
+            token TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            stored_name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ocr_trans_id TEXT
         )''')
 
 # def generate_placard(name, roll, dept, college, phone, profile_path):
@@ -512,12 +519,11 @@ def send_email(to_email, placard_path):
         return False
 
 def cleanup_old_temp_files(max_age_seconds=1800):  # 30 minutes
-    tmp_dir = "static/uploads/tmp"
-    if os.path.exists(tmp_dir):
+    if os.path.exists(STORAGE_TMP):
         try:
             now = time.time()
-            for f in os.listdir(tmp_dir):
-                file_path = os.path.join(tmp_dir, f)
+            for f in os.listdir(STORAGE_TMP):
+                file_path = os.path.join(STORAGE_TMP, f)
                 if os.path.isfile(file_path):
                     if now - os.path.getmtime(file_path) > max_age_seconds:
                         os.remove(file_path)
@@ -548,47 +554,43 @@ def upload_file():
     print(f"Upload type from form: {upload_type}")
     
     if upload_type in ['profile', 'profiles']:
-        dir_type = 'profiles'
+        kind = 'profile'
     elif upload_type in ['payment', 'payments']:
-        dir_type = 'payments'
+        kind = 'payment'
     else:
-        dir_type = 'profiles'  # fallback
+        kind = 'profile'  # fallback
 
-    print(f"Selected directory: {dir_type}")
-    
-    # Generate unique filename in the temporary folder
+    # Generate random upload token and stored filename
+    token = uuid.uuid4().hex
     ext = os.path.splitext(file.filename)[1] or ".png"
-    unique_id = uuid.uuid4().hex
-    
-    if dir_type == 'profiles':
-        filename = f"tmp_profile_{unique_id}{ext}"
-    elif dir_type == 'payments':
-        filename = f"tmp_payment_{unique_id}{ext}"
-    else:
-        filename = f"tmp_file_{unique_id}{ext}"
-
-    filepath = os.path.join('static', 'uploads', 'tmp', filename)
-    
-    print(f"Target temp filepath: {filepath}")
+    filename = f"{token}{ext}"
+    filepath = os.path.join(STORAGE_TMP, filename)
     
     try:
         # Ensure upload directory exists
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        print(f"Directory verified/created: {os.path.dirname(filepath)}")
+        os.makedirs(STORAGE_TMP, exist_ok=True)
         
         # Save the uploaded file
         file.save(filepath)
         print(f"File saved to temp: {filepath}")
         
-        response_data = {
-            'message': 'File uploaded successfully',
-            'path': filepath.replace('\\', '/')  # Ensure forward slashes for URLs/JSON
-        }
-
+        trans_id = None
         # OCR only for payment screenshots
-        if dir_type == 'payments':
+        if kind == 'payment':
             trans_id = extract_transaction_id(filepath)
             print(f"OCR extracted Transaction ID: {trans_id}")
+
+        with sqlite3.connect('students.db') as conn:
+            conn.execute('''
+                INSERT INTO uploads (token, kind, stored_name, ocr_trans_id)
+                VALUES (?, ?, ?, ?)
+            ''', (token, kind, filename, trans_id))
+
+        response_data = {
+            'message': 'File uploaded successfully',
+            'token': token
+        }
+        if kind == 'payment':
             response_data['trans_id'] = trans_id or ""
 
         return jsonify(response_data), 200
