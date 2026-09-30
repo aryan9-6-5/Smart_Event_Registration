@@ -19,3 +19,15 @@ def test_no_secret_in_source_or_stdout():
     assert 'print("USING:",' not in content
     assert 'print(\'USING:\',' not in content
 
+def test_static_url_path_is_prefixed(app):
+    """Bug test: static_url_path must be '/static' and not '' to prevent root static exposure."""
+    assert app.static_url_path == '/static'
+
+def test_storage_directories_exist():
+    """Verify that private storage directories exist outside static."""
+    import os
+    for sub in ['tmp', 'profiles', 'payments', 'placards', 'tickets']:
+        path = os.path.join('storage', sub)
+        assert os.path.isdir(path), f"Expected directory {path} to exist"
+
+

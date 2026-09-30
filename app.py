@@ -21,9 +21,20 @@ from PIL import Image
 import re
 load_dotenv()
 
-app = Flask(__name__, static_folder='static', static_url_path='')
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(24))  # Fallback to random key if not set
 csrf = CSRFProtect(app)
+
+# Private Storage Configuration (outside static web root)
+STORAGE_DIR = os.getenv('STORAGE_DIR', 'storage')
+STORAGE_TMP = os.path.join(STORAGE_DIR, 'tmp')
+STORAGE_PROFILES = os.path.join(STORAGE_DIR, 'profiles')
+STORAGE_PAYMENTS = os.path.join(STORAGE_DIR, 'payments')
+STORAGE_PLACARDS = os.path.join(STORAGE_DIR, 'placards')
+STORAGE_TICKETS = os.path.join(STORAGE_DIR, 'tickets')
+
+for dir_path in [STORAGE_TMP, STORAGE_PROFILES, STORAGE_PAYMENTS, STORAGE_PLACARDS, STORAGE_TICKETS]:
+    os.makedirs(dir_path, exist_ok=True)
 
 # Event Parameters Configuration
 CONFIG_PATH = 'event_config.json'
