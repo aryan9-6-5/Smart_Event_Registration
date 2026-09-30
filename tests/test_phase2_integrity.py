@@ -454,6 +454,63 @@ def test_admin_checkin_gate(client):
     assert json_dup['status'] == 'already_checked_in'
     assert "ALREADY" in json_dup['message']
 
+def test_async_email_delivery_and_status_update(client, monkeypatch):
+    """Test: Background email executor delivers email and updates student email_status column."""
+    import time
+    import io
+    from PIL import Image
+    import app as flask_app
+
+    def get_token(kind):
+        buf = io.BytesIO()
+        img = Image.new('RGB', (100, 100), color='cyan')
+        img.save(buf, 'PNG')
+        buf.seek(0)
+        resp = client.post('/upload', data={'file': (buf, f'{kind}.png'), 'type': kind}, content_type='multipart/form-data')
+        return resp.get_json()['token']
+
+    prof = get_token('profile')
+    pay = get_token('payment')
+
+    data = {
+        'name': 'Async Email Student',
+        'email': 'async@example.com',
+        'roll_number': 'ASYNC001',
+        'dept_name': 'CSE',
+        'college_name': 'Engineering College',
+        'trans_id': 'TXNASYNC001',
+        'phone': '9876543210',
+        'profile_token': prof,
+        'payment_token': pay
+    }
+    resp = client.post('/', data=data, follow_redirects=False)
+    assert resp.status_code == 302
+
+    # Give executor a moment to process the task
+    time.sleep(0.3)
+
+    with sqlite3.connect('students.db') as conn:
+        row = conn.execute("SELECT id, email_status FROM students WHERE roll_number = 'ASYNC001'").fetchone()
+        assert row is not None
+        student_id, email_status = row
+        assert email_status == 'sent'
+
+    # Now simulate a failure for a second student
+    monkeypatch.setattr(flask_app, "send_email", lambda to, placard: False)
+
+    prof2 = get_token('profile')
+    pay2 = get_token('payment')
+    data2 = dict(data, roll_number='ASYNC002', trans_id='TXNASYNC002', profile_token=prof2, payment_token=pay2)
+    resp2 = client.post('/', data=data2, follow_redirects=False)
+    assert resp2.status_code == 302
+
+    time.sleep(0.3)
+
+    with sqlite3.connect('students.db') as conn:
+        status2 = conn.execute("SELECT email_status FROM students WHERE roll_number = 'ASYNC002'").fetchone()[0]
+        assert status2 == 'failed'
+
+
 
 
 

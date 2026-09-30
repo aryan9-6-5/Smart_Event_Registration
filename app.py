@@ -9,6 +9,7 @@ import json
 import shutil
 import hmac
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from collections import defaultdict
 from email.message import EmailMessage
@@ -30,6 +31,7 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max upload
 ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
 Image.MAX_IMAGE_PIXELS = 25_000_000  # Decompression bomb guard
 csrf = CSRFProtect(app)
+EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_worker")
 
 @app.before_request
 def block_private_file_access():
@@ -164,7 +166,7 @@ The IP has been temporarily blocked for {ABUSE_COOLDOWN_SECONDS // 60} minutes.
 
 -- Smart Event Registration System""")
         
-        server = smtplib.SMTP(SMTP_CONFIG['server'], SMTP_CONFIG['port'])
+        server = smtplib.SMTP(SMTP_CONFIG['server'], SMTP_CONFIG['port'], timeout=10)
         server.ehlo()
         server.starttls()
         server.ehlo()
@@ -174,6 +176,13 @@ The IP has been temporarily blocked for {ABUSE_COOLDOWN_SECONDS // 60} minutes.
         print(f"[ALERT] Abuse warning email sent for IP: {ip}")
     except Exception as e:
         print(f"[WARN] Failed to send abuse warning email: {e}")
+
+def send_abuse_warning_email_async(ip, user_agent, form_data):
+    """Offload abuse warning email to background thread pool."""
+    try:
+        send_abuse_warning_email(ip, user_agent, form_data)
+    except Exception as e:
+        print(f"[WARN] Async abuse email task failed: {e}")
 
 # Test profile and payment images
 TEST_PROFILE_PATH = "static/uploads/profiles/test_profile.jpg"
@@ -610,7 +619,7 @@ def send_email(to_email, placard_path):
 
     try:
         print(f"Connecting to {SMTP_CONFIG['server']}:{SMTP_CONFIG['port']}")
-        server = smtplib.SMTP(SMTP_CONFIG['server'], SMTP_CONFIG['port'])
+        server = smtplib.SMTP(SMTP_CONFIG['server'], SMTP_CONFIG['port'], timeout=10)
         server.set_debuglevel(1)  # Enable debug output
         server.ehlo()  # Identify to server
         server.starttls()  # Start TLS encryption
@@ -624,6 +633,24 @@ def send_email(to_email, placard_path):
     except Exception as e:
         print(f"SMTP error: {str(e)}")
         return False
+
+def send_email_async(student_id, to_email, placard_path):
+    """Background worker task to deliver attendee placard email and update email_status."""
+    success = False
+    try:
+        success = bool(send_email(to_email, placard_path))
+    except Exception as e:
+        print(f"Error in send_email_async: {e}")
+        success = False
+
+    try:
+        with sqlite3.connect('students.db', timeout=10) as conn:
+            status_val = 'sent' if success else 'failed'
+            conn.execute("UPDATE students SET email_status = ? WHERE id = ?", (status_val, student_id))
+    except Exception as e:
+        print(f"Error updating student email_status in DB: {e}")
+
+    return success
 
 def cleanup_old_temp_files(max_age_seconds=1800):  # 30 minutes
     if os.path.exists(STORAGE_TMP):
@@ -969,7 +996,7 @@ def index():
             
             if is_abusive:
                 print(f"[ALERT] ABUSE DETECTED from IP: {client_ip}")
-                send_abuse_warning_email(client_ip, user_agent, form_snippet)
+                EMAIL_EXECUTOR.submit(send_abuse_warning_email_async, client_ip, user_agent, form_snippet)
                 return render_template('index.html', form=form,
                     error="Suspicious activity detected from your connection. We've seen repeated invalid submissions from your credentials. This incident has been reported.",
                     abuse_blocked=True)
@@ -1120,13 +1147,14 @@ def index():
                     except: pass
                 raise e
 
-            email_sent = send_email(form.email.data, placard_path)
+            # Offload email sending to background thread pool
+            EMAIL_EXECUTOR.submit(send_email_async, student_id, form.email.data, placard_path)
             
             # Clear any abuse tracking for this IP on successful registration
             ABUSE_TRACKER.pop(client_ip, None)
             
             # POST-Redirect-GET: redirect to success page using unguessable token
-            return redirect(url_for('success_page', public_token=public_token, email_failed=(0 if email_sent else 1)))
+            return redirect(url_for('success_page', public_token=public_token))
         
         except Exception as e:
             return render_template('index.html', form=form, error=str(e))
