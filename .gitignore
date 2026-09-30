@@ -47,3 +47,7 @@ Thumbs.db
 my_token.py
 # Generated theme banner (source lives in theme/banner.jpg)
 static/theme/
+
+# SQLite WAL sidecar files
+*.db-shm
+*.db-wal
