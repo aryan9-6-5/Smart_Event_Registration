@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>College Tech Summit 2024</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    {% include '_theme_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 <script>
     // Globally scoped event configurations for JavaScript dynamic updates
@@ -20,6 +20,7 @@
 </head>
 
 <body>
+    {% include '_banner_band.html' %}
     <header class="main-header">
         <div class="header-content">
             <h1>{{ event_title }}</h1>

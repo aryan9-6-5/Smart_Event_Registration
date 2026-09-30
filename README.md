@@ -35,6 +35,16 @@ This project is a complete event registration system built using Flask for the b
 
 ---
 
+## Re-theming an event
+
+The app ships with a blue default theme. To brand it for an event, do three things:
+
+1. Put your banner at `theme/banner.jpg` (wide, about 4:1, for example 1584x396). Keep the important content in the centre 60%, because phones crop the sides.
+2. Generate a palette from it: `python theme.py from-banner theme/banner.jpg`. This writes `theme/theme.json`. You can also copy `theme/theme.example.json` and edit the seven colours by hand, or use `theme/PROMPT.md` with an AI assistant.
+3. Restart the app.
+
+If `theme/theme.json` is missing or invalid (bad hex, unreadable text contrast below 4.5:1, unknown keys), the app logs the reason and uses the default blue theme. Status colours (confirmed, pending, rejected, and the gate check-in screens) are fixed and are never themed. The emailed placard uses the same palette.
+
 ## How to Run This Application
 
 1. **Clone and Setup**:

@@ -45,3 +45,5 @@ static/tickets/*
 Thumbs.db
 
 my_token.py
+# Generated theme banner (source lives in theme/banner.jpg)
+static/theme/

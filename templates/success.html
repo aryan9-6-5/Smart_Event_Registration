@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registration Successful</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    {% include '_theme_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
+    {% include '_banner_band.html' %}
     <header class="gradient-header">
-        <h1>🎉 Registration Successful 🎉</h1>
-        <p>Welcome to the Tech Summit 2024! We’re excited to have you.</p>
+        <h1>Registration successful</h1>
+        <p>Welcome to {{ event_title }}. We’re glad you’re joining us.</p>
     </header>
 
     <main class="success-container">

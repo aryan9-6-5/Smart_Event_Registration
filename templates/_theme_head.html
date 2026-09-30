@@ -1,0 +1,28 @@
+{# Theme variables. Brand colours come from theme/theme.json; status colours are FIXED so the gate never changes meaning. #}
+<link href="https://fonts.googleapis.com/css2?family={{ t.font.family|replace(' ', '+') }}:wght@{{ t.font.weights|join(';') }}&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg: {{ t.colors.bg }};
+    --surface: {{ t.colors.surface }};
+    --text: {{ t.colors.text }};
+    --muted: {{ t.colors.muted }};
+    --border: {{ t.colors.border }};
+    --primary: {{ t.colors.primary }};
+    --primary-text: {{ t.colors.primary_text }};
+    --font: '{{ t.font.family }}';
+
+    /* fixed, never themed */
+    --ok: #1F7A45;
+    --ok-bg: #E3F3EA;
+    --ok-text: #14603A;
+    --pending: #B7791F;
+    --pending-bg: #FDF3DC;
+    --pending-border: #E9C77B;
+    --pending-text: #7A4E0A;
+    --bad: #C0443B;
+    --bad-bg: #FBE9E7;
+    --bad-border: #E8A29C;
+    --bad-text: #8F2A22;
+    --on-status: #FFFFFF;
+}
+</style>

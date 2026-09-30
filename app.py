@@ -27,6 +27,7 @@ from werkzeug.security import check_password_hash
 import pytesseract
 from PIL import Image
 import re
+import theme as theme_module
 load_dotenv()
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -135,10 +136,16 @@ def get_event_config():
             print(f"Error loading event config JSON: {e}")
     return DEFAULT_EVENT_CONFIG
 
+# Event theme (palette, font, banner) - validated once at startup, falls back to defaults
+THEME = theme_module.load_theme()
+BANNER_STATIC_PATH = theme_module.prepare_banner(THEME)
+
 @app.context_processor
 def inject_event_config():
     config = get_event_config()
     return {
+        't': THEME,
+        'banner_url': url_for('static', filename=BANNER_STATIC_PATH) if BANNER_STATIC_PATH else None,
         'event_title': config['title'],
         'event_subtitle': config['subtitle'],
         'event_description': config['description'],
@@ -550,13 +557,15 @@ def init_db():
 
 def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secret=None):
     config = get_event_config()
-    # Define theme colors matching the user's CSS variables
-    COLOR_PRIMARY = '#1A2A45'       # Rich navy blue for primary text
-    COLOR_SECONDARY = '#94A3B8'     # Muted slate blue for labels
-    COLOR_BG_LIGHT = '#F8FAFC'      # Soft off-white background
-    COLOR_SOFT_BG = '#E6EDF5'       # Ultra-light blue-gray for borders/badges
-    COLOR_TEXT_DARK = '#1E293B'     # Deep charcoal for body values
-    COLOR_WHITE = '#FFFFFF'         # Pure white for stub background
+    # Placard colours come from the event theme so the emailed ticket matches the site
+    theme_colors = THEME['colors']
+    COLOR_ACCENT = theme_colors['primary']     # top strip
+    COLOR_PRIMARY = theme_colors['text']       # title and key values
+    COLOR_SECONDARY = theme_colors['muted']    # labels
+    COLOR_BG_LIGHT = theme_colors['bg']        # main background
+    COLOR_SOFT_BG = theme_colors['border']     # borders/badges
+    COLOR_TEXT_DARK = theme_colors['text']     # body values
+    COLOR_WHITE = theme_colors['surface']      # stub background
 
     # Helper function to load Poppins fonts with fallbacks
     def load_poppins_font(font_type, size):
@@ -598,6 +607,9 @@ def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secr
     gap_length = 8
     for y in range(0, 600, dash_length + gap_length):
         draw.line([(700, y), (700, min(y + dash_length, 600))], fill=COLOR_SOFT_BG, width=2)
+
+    # Brand accent strip along the top edge
+    draw.rectangle([(0, 0), (999, 9)], fill=COLOR_ACCENT)
 
     # 4. Draw Left Section Header (Title & Subtitle)
     draw.text((50, 45), config['title'].upper(), fill=COLOR_PRIMARY, font=font_title)

@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Smart Event Registration</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    {% include '_theme_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <style>
         .admin-nav {
-            background: #1A2A45;
-            color: #ffffff;
+            background: var(--primary);
+            color: var(--primary-text);
             padding: 16px 32px;
             display: flex;
             align-items: center;
@@ -21,13 +21,13 @@
             margin: 0;
         }
         .admin-nav a {
-            color: #94A3B8;
+            color: var(--muted);
             text-decoration: none;
             font-size: 14px;
             transition: color 0.2s;
         }
         .admin-nav a:hover {
-            color: #ffffff;
+            color: var(--primary-text);
         }
         .admin-container {
             max-width: 1200px;
@@ -42,21 +42,21 @@
         .search-box input {
             flex: 1;
             padding: 12px 16px;
-            border: 1px solid #CBD5E1;
+            border: 1px solid var(--border);
             border-radius: 8px;
             font-size: 14px;
         }
         .search-box button {
             padding: 12px 24px;
-            background: #2563EB;
-            color: #ffffff;
+            background: var(--primary);
+            color: var(--primary-text);
             border: none;
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
         }
         .card {
-            background: #ffffff;
+            background: var(--surface);
             border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.05);
             padding: 24px;
@@ -64,7 +64,7 @@
         }
         .card h2 {
             font-size: 20px;
-            color: #1A2A45;
+            color: var(--text);
             margin-top: 0;
             margin-bottom: 20px;
             display: flex;
@@ -78,11 +78,11 @@
             font-size: 12px;
             font-weight: 600;
         }
-        .badge-pending { background: #FEF3C7; color: #92400E; }
-        .badge-confirmed { background: #D1FAE5; color: #065F46; }
-        .badge-rejected { background: #FEE2E2; color: #991B1B; }
-        .badge-ocr { background: #E0E7FF; color: #3730A3; }
-        .badge-manual { background: #F3F4F6; color: #4B5563; }
+        .badge-pending { background: var(--pending-bg); color: var(--pending-text); }
+        .badge-confirmed { background: var(--ok-bg); color: var(--ok-text); }
+        .badge-rejected { background: var(--bad-bg); color: var(--bad-text); }
+        .badge-ocr { background: var(--bg); color: var(--text); }
+        .badge-manual { background: var(--pending-bg); color: var(--pending-text); }
         
         table {
             width: 100%;
@@ -92,15 +92,15 @@
         th, td {
             text-align: left;
             padding: 12px 14px;
-            border-bottom: 1px solid #E2E8F0;
+            border-bottom: 1px solid var(--border);
         }
         th {
-            background: #F8FAFC;
-            color: #475569;
+            background: var(--bg);
+            color: var(--muted);
             font-weight: 600;
         }
         tr:hover {
-            background: #F8FAFC;
+            background: var(--bg);
         }
         .btn-sm {
             padding: 6px 14px;
@@ -112,11 +112,11 @@
             text-decoration: none;
             display: inline-block;
         }
-        .btn-approve { background: #10B981; color: #ffffff; }
-        .btn-approve:hover { background: #059669; }
-        .btn-reject { background: #EF4444; color: #ffffff; }
-        .btn-reject:hover { background: #DC2626; }
-        .btn-view { background: #3B82F6; color: #ffffff; }
+        .btn-approve { background: var(--ok); color: var(--on-status); }
+        .btn-approve:hover { background: color-mix(in srgb, var(--ok) 85%, black); }
+        .btn-reject { background: var(--bad); color: var(--on-status); }
+        .btn-reject:hover { background: color-mix(in srgb, var(--bad) 85%, black); }
+        .btn-view { background: var(--primary); color: var(--primary-text); }
         .action-form {
             display: inline-block;
             margin: 0 2px;
@@ -124,7 +124,7 @@
         .empty-state {
             text-align: center;
             padding: 30px;
-            color: #64748B;
+            color: var(--muted);
         }
     </style>
 </head>
@@ -142,7 +142,7 @@
             <input type="text" name="q" value="{{ q or '' }}" placeholder="Search attendees by roll number, name, or transaction ID...">
             <button type="submit">Search</button>
             {% if q %}
-            <a href="{{ url_for('admin_dashboard') }}" style="align-self: center; font-size: 14px; color: #64748B; text-decoration: none;">Clear</a>
+            <a href="{{ url_for('admin_dashboard') }}" style="align-self: center; font-size: 14px; color: var(--muted); text-decoration: none;">Clear</a>
             {% endif %}
         </form>
 
@@ -175,9 +175,9 @@
                         </td>
                         <td>
                             {% if s.checked_in_at %}
-                            <span style="color: #059669; font-weight: 500;">✓ {{ s.checked_in_at }}</span>
+                            <span style="color: var(--ok-text); font-weight: 500;">✓ {{ s.checked_in_at }}</span>
                             {% else %}
-                            <span style="color: #94A3B8;">Not checked in</span>
+                            <span style="color: var(--muted);">Not checked in</span>
                             {% endif %}
                         </td>
                         <td>

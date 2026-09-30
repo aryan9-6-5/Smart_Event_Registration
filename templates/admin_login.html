@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Login - Event Registration</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    {% include '_theme_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <style>
         .login-wrapper {
@@ -15,7 +15,7 @@
             padding: 20px;
         }
         .login-card {
-            background: #ffffff;
+            background: var(--surface);
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.08);
             padding: 40px;
@@ -24,12 +24,12 @@
         }
         .login-card h2 {
             font-size: 24px;
-            color: #1A2A45;
+            color: var(--text);
             margin-bottom: 8px;
             text-align: center;
         }
         .login-card p {
-            color: #64748B;
+            color: var(--muted);
             font-size: 14px;
             text-align: center;
             margin-bottom: 24px;
@@ -41,13 +41,13 @@
             display: block;
             font-size: 13px;
             font-weight: 600;
-            color: #334155;
+            color: var(--text);
             margin-bottom: 6px;
         }
         .form-group input {
             width: 100%;
             padding: 12px 14px;
-            border: 1px solid #CBD5E1;
+            border: 1px solid var(--border);
             border-radius: 8px;
             font-size: 14px;
             box-sizing: border-box;
@@ -55,12 +55,12 @@
         }
         .form-group input:focus {
             outline: none;
-            border-color: #3B82F6;
+            border-color: var(--primary);
         }
         .error-alert {
-            background: #FEF2F2;
-            border: 1px solid #F87171;
-            color: #991B1B;
+            background: var(--bad-bg);
+            border: 1px solid var(--bad-border);
+            color: var(--bad-text);
             padding: 10px 14px;
             border-radius: 8px;
             font-size: 13px;
@@ -70,8 +70,8 @@
         .login-btn {
             width: 100%;
             padding: 12px;
-            background: #1A2A45;
-            color: #ffffff;
+            background: var(--primary);
+            color: var(--primary-text);
             border: none;
             border-radius: 8px;
             font-size: 15px;
@@ -80,7 +80,7 @@
             transition: background 0.2s;
         }
         .login-btn:hover {
-            background: #2563EB;
+            background: color-mix(in srgb, var(--primary) 85%, black);
         }
     </style>
 </head>

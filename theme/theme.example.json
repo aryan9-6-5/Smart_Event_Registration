@@ -1,0 +1,20 @@
+{
+  "banner": null,
+  "banner_focus": "center",
+  "colors": {
+    "bg": "#F4F6F8",
+    "surface": "#FFFFFF",
+    "text": "#111827",
+    "muted": "#5B6472",
+    "border": "#D9DEE5",
+    "primary": "#1D4ED8",
+    "primary_text": "#FFFFFF"
+  },
+  "font": {
+    "family": "Inter",
+    "weights": [
+      400,
+      600
+    ]
+  }
+}

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gate Check-in - Event Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    {% include '_theme_head.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <style>
         .checkin-container {
@@ -13,7 +13,7 @@
             padding: 0 20px;
         }
         .checkin-card {
-            background: #ffffff;
+            background: var(--surface);
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.08);
             padding: 30px;
@@ -21,12 +21,12 @@
         }
         .checkin-card h2 {
             margin-top: 0;
-            color: #1A2A45;
+            color: var(--text);
         }
         .checkin-input {
             width: 100%;
             padding: 14px 16px;
-            border: 2px solid #CBD5E1;
+            border: 2px solid var(--border);
             border-radius: 10px;
             font-size: 16px;
             box-sizing: border-box;
@@ -35,13 +35,13 @@
         }
         .checkin-input:focus {
             outline: none;
-            border-color: #2563EB;
+            border-color: var(--primary);
         }
         .scan-btn {
             width: 100%;
             padding: 14px;
-            background: #2563EB;
-            color: #ffffff;
+            background: var(--primary);
+            color: var(--primary-text);
             border: none;
             border-radius: 10px;
             font-size: 16px;
@@ -55,24 +55,24 @@
             display: none;
             text-align: left;
         }
-        .result-success { background: #D1FAE5; border: 1px solid #10B981; color: #065F46; }
-        .result-error { background: #FEE2E2; border: 1px solid #EF4444; color: #991B1B; }
-        .result-warning { background: #FEF3C7; border: 1px solid #F59E0B; color: #92400E; }
+        .result-success { background: var(--ok-bg); border: 1px solid var(--ok); color: var(--ok-text); }
+        .result-error { background: var(--bad-bg); border: 1px solid var(--bad); color: var(--bad-text); }
+        .result-warning { background: var(--pending-bg); border: 1px solid var(--pending-border); color: var(--pending-text); }
     </style>
 </head>
 <body>
-    <header class="admin-nav" style="background: #1A2A45; color: #ffffff; padding: 16px 32px; display: flex; justify-content: space-between;">
+    <header class="admin-nav" style="background: var(--primary); color: var(--primary-text); padding: 16px 32px; display: flex; justify-content: space-between;">
         <h1 style="font-size: 18px; margin: 0;">Smart Event Registration — Gate Check-in</h1>
         <div>
-            <a href="{{ url_for('admin_dashboard') }}" style="color: #94A3B8; text-decoration: none; margin-right: 15px;">Dashboard</a>
-            <a href="{{ url_for('admin_logout') }}" style="color: #94A3B8; text-decoration: none;">Sign Out</a>
+            <a href="{{ url_for('admin_dashboard') }}" style="color: color-mix(in srgb, var(--primary-text) 75%, transparent); text-decoration: none; margin-right: 15px;">Dashboard</a>
+            <a href="{{ url_for('admin_logout') }}" style="color: color-mix(in srgb, var(--primary-text) 75%, transparent); text-decoration: none;">Sign Out</a>
         </div>
     </header>
 
     <main class="checkin-container">
         <div class="checkin-card">
             <h2>Scan Attendee QR Code</h2>
-            <p style="color: #64748B; font-size: 14px;">Scan the QR code on the attendee's placard using a barcode/QR scanner or paste the raw payload below.</p>
+            <p style="color: var(--muted); font-size: 14px;">Scan the QR code on the attendee's placard using a barcode/QR scanner or paste the raw payload below.</p>
 
             <form id="checkinForm" onsubmit="handleCheckin(event)">
                 <input type="text" id="qrPayload" class="checkin-input" placeholder="Scan or paste QR payload (e.g. TECH24-ROLL.sig)..." autofocus autocomplete="off">
