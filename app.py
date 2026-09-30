@@ -281,10 +281,17 @@ def init_db():
             name TEXT, email TEXT, roll_number TEXT UNIQUE,
             dept_name TEXT, college_name TEXT, trans_id TEXT UNIQUE,
             phone TEXT, profile_path TEXT, payment_path TEXT,
-            placard_path TEXT, public_token TEXT UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            placard_path TEXT, public_token TEXT UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'CONFIRMED',
+            ocr_trans_id TEXT,
+            trans_id_source TEXT DEFAULT 'manual',
+            payment_phash TEXT,
+            email_status TEXT DEFAULT 'pending',
+            checked_in_at TIMESTAMP,
+            ticket_secret TEXT
         )''')
         
-        # Check and add created_at / public_token columns if missing
+        # Additive migration: check and add missing columns
         cursor.execute("PRAGMA table_info(students)")
         columns = [row[1] for row in cursor.fetchall()]
         if 'created_at' not in columns:
@@ -294,14 +301,29 @@ def init_db():
                 print("Added missing created_at column to students table.")
             except Exception as e:
                 print(f"Error adding created_at column: {e}")
-        if 'public_token' not in columns:
-            try:
-                cursor.execute("ALTER TABLE students ADD COLUMN public_token TEXT")
-                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_public_token ON students(public_token)")
-                conn.commit()
-                print("Added missing public_token column to students table.")
-            except Exception as e:
-                print(f"Error adding public_token column: {e}")
+
+        additive_columns = [
+            ('public_token', "TEXT", "CREATE UNIQUE INDEX IF NOT EXISTS idx_students_public_token ON students(public_token)"),
+            ('status', "TEXT DEFAULT 'CONFIRMED'", "CREATE INDEX IF NOT EXISTS idx_students_status ON students(status)"),
+            ('ocr_trans_id', "TEXT", None),
+            ('trans_id_source', "TEXT DEFAULT 'manual'", None),
+            ('payment_phash', "TEXT", "CREATE INDEX IF NOT EXISTS idx_students_phash ON students(payment_phash)"),
+            ('email_status', "TEXT DEFAULT 'pending'", None),
+            ('checked_in_at', "TIMESTAMP", None),
+            ('ticket_secret', "TEXT", None)
+        ]
+
+        for col_name, col_def, idx_sql in additive_columns:
+            if col_name not in columns:
+                try:
+                    cursor.execute(f"ALTER TABLE students ADD COLUMN {col_name} {col_def}")
+                    if idx_sql:
+                        cursor.execute(idx_sql)
+                    conn.commit()
+                    print(f"Added missing {col_name} column to students table.")
+                except Exception as e:
+                    print(f"Error adding {col_name} column: {e}")
+
 
         cursor.execute('''CREATE TABLE IF NOT EXISTS abuse_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
