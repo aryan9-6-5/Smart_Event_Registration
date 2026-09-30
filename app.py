@@ -184,16 +184,15 @@ def extract_transaction_id(image_path):
         print("OCR Output:", text)
 
         patterns = [
-            r"txn[^\w]?id[^\w]?:?\s*([A-Z0-9]{6,})",         # txn id: ABC1234
-            r"Transaction[^\w]*ID[^\w]?:?\s*([A-Z0-9]{6,})",  # Transaction ID: ABC1234
-            r"UPI[^\w]*Ref[^\w]?:?\s*([A-Z0-9]{6,})",         # UPI Ref: XYZ456
-            r"([A-Z0-9]{8,})"                                 # Catch fallback 8+ character alphanumeric strings
+            r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*Ref|UTR)[^\w]?:?\s*([A-Za-z0-9]{6,50})",
+            r"\b(\d{12})\b",                                 # UPI UTR 12 numeric digits
+            r"\b([A-Za-z0-9]{8,25})\b"                       # General transaction ref fallback
         ]
 
         for pattern in patterns:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
-                return match.group(1)
+                return match.group(1).strip()
 
     except Exception as e:
         print("OCR error:", e)
@@ -236,7 +235,8 @@ class RegistrationForm(FlaskForm):
     ])
     trans_id = StringField('Transaction ID', validators=[
         DataRequired(message="Transaction ID is required. Upload payment proof first."),
-        Length(min=5, max=50, message="Transaction ID must be between 5 and 50 characters.")
+        Length(min=5, max=50, message="Transaction ID must be between 5 and 50 characters."),
+        Regexp(r'^[A-Za-z0-9]{5,50}$', message="Transaction ID must be alphanumeric and between 5 and 50 characters.")
     ])
     phone = StringField('Phone', validators=[
         DataRequired(message="Phone number is required."),
@@ -752,13 +752,23 @@ def index():
                 if not row_prof:
                     return render_template('index.html', form=form, error="Profile photo upload is invalid or expired. Please re-upload.")
                 
-                cursor.execute("SELECT stored_name FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
+                cursor.execute("SELECT stored_name, ocr_trans_id FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
                 row_pay = cursor.fetchone()
                 if not row_pay:
                     return render_template('index.html', form=form, error="Payment proof upload is invalid or expired. Please re-upload.")
             
             stored_profile = row_prof[0]
             stored_payment = row_pay[0]
+            ocr_trans_id = row_pay[1]
+
+            if ocr_trans_id and ocr_trans_id.strip():
+                final_trans_id = ocr_trans_id.strip()
+                trans_id_source = 'ocr'
+                student_status = 'CONFIRMED'
+            else:
+                final_trans_id = form.trans_id.data.strip()
+                trans_id_source = 'manual'
+                student_status = 'PENDING'
             
             profile_tmp_path = os.path.join(STORAGE_TMP, stored_profile)
             payment_tmp_path = os.path.join(STORAGE_TMP, stored_payment)
@@ -786,14 +796,16 @@ def index():
                     cursor.execute('''
                         INSERT INTO students 
                         (name, email, roll_number, dept_name, college_name, 
-                         trans_id, phone, profile_path, payment_path, placard_path, public_token)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                         trans_id, phone, profile_path, payment_path, placard_path, public_token,
+                         status, ocr_trans_id, trans_id_source)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ''', (
                         form.name.data, form.email.data, roll_number_clean,
                         form.dept_name.data, form.college_name.data,
-                        form.trans_id.data, form.phone.data,
+                        final_trans_id, form.phone.data,
                         final_profile_path, final_payment_path, None,
-                        public_token
+                        public_token,
+                        student_status, ocr_trans_id, trans_id_source
                     ))
                     student_id = cursor.lastrowid
             except sqlite3.IntegrityError as e:
