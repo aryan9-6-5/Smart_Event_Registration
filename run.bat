@@ -26,19 +26,22 @@ echo [INFO] Detected Python:
 %PYTHON_CMD% --version
 echo.
 echo Select an option:
-echo   [1] Start Production Server (Waitress / wsgi.py)
-echo   [2] Start Development Server (Flask / app.py)
+echo   [1] Start Production Server (Waitress) + Auto-Open Browser Tabs
+echo   [2] Start Development Server (Flask) + Auto-Open Browser Tabs
 echo   [3] Run Automated Test Suite (pytest)
-echo   [4] Open Registration Portal in Browser
-echo   [5] Open Admin Portal in Browser
-echo   [6] Exit
-echo.
+echo   [4] Open Registration Portal in Browser (http://127.0.0.1:5000/)
+echo   [5] Open Admin Portal in Browser (http://127.0.0.1:5000/admin)
+echo   [6] Open Gate Check-in Portal (http://127.0.0.1:5000/admin/checkin)
+echo   [7] Exit
+echo.1
 
-choice /c 123456 /t 10 /d 1 /m "Press [1-6] (auto-starts #1 in 10s): "
+choice /c 1234567 /t 5 /d 1 /m "Press [1-7] (auto-starts #1 in 5s): "
 set "SELECTED=%errorlevel%"
 
 if "%SELECTED%"=="1" (
     echo.
+    echo [INFO] Opening Registration and Admin portals in your browser...
+    start "" /min cmd /c "timeout /t 2 /nobreak >nul & start http://127.0.0.1:5000/ & start http://127.0.0.1:5000/admin"
     echo [INFO] Starting Production Server on http://127.0.0.1:5000 ...
     echo [INFO] Press Ctrl+C in this window to stop the server.
     echo.
@@ -46,6 +49,8 @@ if "%SELECTED%"=="1" (
 )
 if "%SELECTED%"=="2" (
     echo.
+    echo [INFO] Opening Registration and Admin portals in your browser...
+    start "" /min cmd /c "timeout /t 2 /nobreak >nul & start http://127.0.0.1:5000/ & start http://127.0.0.1:5000/admin"
     echo [INFO] Starting Development Server on http://127.0.0.1:5000 ...
     echo [INFO] Press Ctrl+C in this window to stop the server.
     echo.
@@ -68,5 +73,9 @@ if "%SELECTED%"=="5" (
     start http://127.0.0.1:5000/admin
 )
 if "%SELECTED%"=="6" (
+    echo [INFO] Opening Gate Check-in Portal...
+    start http://127.0.0.1:5000/admin/checkin
+)
+if "%SELECTED%"=="7" (
     echo Exiting.
 )

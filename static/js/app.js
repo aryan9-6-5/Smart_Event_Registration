@@ -53,39 +53,54 @@ const UPLOAD_SKIP_BELOW = 1.5 * 1024 * 1024;
 
 function prepareImageForUpload(file) {
     return new Promise(function (resolve) {
-        if (!file.type || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
-            resolve(file);
-            return;
-        }
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = function () {
-            URL.revokeObjectURL(url);
-            const scale = Math.min(1, UPLOAD_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-            if (scale === 1 && file.size <= UPLOAD_SKIP_BELOW) {
+        try {
+            if (!file.type || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
                 resolve(file);
                 return;
             }
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.round(img.naturalWidth * scale);
-            canvas.height = Math.round(img.naturalHeight * scale);
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = 'white'; // flatten transparency for JPEG
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(function (blob) {
-                if (!blob || (scale === 1 && blob.size >= file.size)) {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = function () {
+                try {
+                    URL.revokeObjectURL(url);
+                    const scale = Math.min(1, UPLOAD_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+                    if (scale === 1 && file.size <= UPLOAD_SKIP_BELOW) {
+                        resolve(file);
+                        return;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.round(img.naturalWidth * scale);
+                    canvas.height = Math.round(img.naturalHeight * scale);
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = 'white'; // flatten transparency for JPEG
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob(function (blob) {
+                        if (!blob || (scale === 1 && blob.size >= file.size)) {
+                            resolve(file);
+                            return;
+                        }
+                        try {
+                            const newFile = new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+                            resolve(newFile);
+                        } catch (e) {
+                            resolve(file);
+                        }
+                    }, 'image/jpeg', 0.88);
+                } catch (innerErr) {
+                    console.warn('Canvas resizing failed, uploading original file:', innerErr);
                     resolve(file);
-                    return;
                 }
-                resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
-            }, 'image/jpeg', 0.88);
-        };
-        img.onerror = function () {  // e.g. HEIC: let the server explain the problem
-            URL.revokeObjectURL(url);
+            };
+            img.onerror = function () {  // e.g. HEIC: let the server explain the problem
+                URL.revokeObjectURL(url);
+                resolve(file);
+            };
+            img.src = url;
+        } catch (err) {
+            console.warn('prepareImageForUpload failed, uploading original file:', err);
             resolve(file);
-        };
-        img.src = url;
+        }
     });
 }
 
@@ -118,6 +133,13 @@ function showUploadNote(uploadCard, message, status) {
 function handleFileUpload(fileInput, progressBar, progressText, pathField, type) {
     const original = fileInput.files[0];
     if (!original) return;
+
+    // Immediately clear failure states on the upload card
+    const uploadCard = fileInput.closest('.upload-card');
+    if (uploadCard) {
+        uploadCard.classList.remove('upload-failed');
+        uploadCard.querySelectorAll('.upload-error').forEach(el => el.remove());
+    }
 
     // Immediately clear path and reset upload state while the image is prepared
     pathField.value = '';
@@ -176,6 +198,21 @@ function startUpload(fileInput, progressBar, progressText, pathField, type, file
             if (uploadCard) {
                 uploadCard.classList.add('uploaded');
                 uploadCard.classList.remove('upload-failed');
+                uploadCard.querySelectorAll('.upload-error').forEach(el => el.remove());
+            }
+
+            // Remove top-level error banner if this was an upload or validation error
+            const errorBanner = document.querySelector('.error-banner');
+            if (errorBanner) {
+                const text = errorBanner.textContent.toLowerCase();
+                if ((type === 'profile' && (text.includes('profile') || text.includes('photo'))) ||
+                    (type === 'payment' && (text.includes('payment') || text.includes('proof') || text.includes('transaction')))) {
+                    errorBanner.remove();
+                }
+            }
+            const validationBanner = document.querySelector('.form-validation-banner');
+            if (validationBanner) {
+                validationBanner.remove();
             }
 
             // Show uploaded image preview
@@ -203,21 +240,31 @@ function startUpload(fileInput, progressBar, progressText, pathField, type, file
                 const lockIcon = document.getElementById('trans-lock-icon');
 
                 if (transInput && transGroup) {
+                    transGroup.querySelectorAll('.field-error, .js-field-error').forEach(el => el.remove());
+
                     if (response.trans_id) {
                         transInput.value = response.trans_id;
                         transInput.readOnly = true;
+                        transInput.classList.remove('invalid');
+                        transInput.classList.add('valid');
                         transInput.classList.add('locked');
                         if (lockIcon) lockIcon.style.display = 'flex';
                     } else {
                         transInput.value = '';
                         transInput.readOnly = false;
-                        transInput.classList.remove('locked');
+                        transInput.classList.remove('locked', 'valid');
                         if (lockIcon) lockIcon.style.display = 'none';
+                        transInput.placeholder = 'Enter 12-digit UTR/Ref No manually';
                     }
                     transGroup.style.display = 'block';
                     transGroup.classList.add('visible');
                 }
-                showUploadNote(uploadCard, response.amount_message, response.amount_status);
+                let noteMsg = response.amount_message || '';
+                if (!response.trans_id) {
+                    const hint = 'Transaction ID not detected automatically. Please type it in the field above.';
+                    noteMsg = noteMsg ? `${noteMsg} ${hint}` : hint;
+                }
+                showUploadNote(uploadCard, noteMsg, response.amount_status);
             }
 
             progressText.textContent = 'Upload complete!';
@@ -281,9 +328,9 @@ function validateField(input) {
 
     const value = input.value.trim();
 
-    // Remove existing JS error
-    const existingError = input.parentElement.querySelector('.js-field-error');
-    if (existingError) existingError.remove();
+    // Remove existing server and JS error
+    const existingErrors = input.parentElement.querySelectorAll('.field-error, .js-field-error');
+    existingErrors.forEach(el => el.remove());
 
     if (rule.required && !value) {
         setFieldState(input, 'invalid', `${fieldName.replace('_', ' ')} is required.`);
@@ -306,9 +353,9 @@ function validateField(input) {
 function setFieldState(input, state, message) {
     input.classList.remove('valid', 'invalid');
 
-    // Remove existing JS error
-    const existingError = input.parentElement.querySelector('.js-field-error');
-    if (existingError) existingError.remove();
+    // Remove existing server and JS error messages
+    const existingErrors = input.parentElement.querySelectorAll('.field-error, .js-field-error');
+    existingErrors.forEach(el => el.remove());
 
     if (state === 'valid') {
         input.classList.add('valid');
@@ -425,17 +472,34 @@ document.addEventListener('DOMContentLoaded', function () {
         updateTicketId();
     }
 
-    // 4. Real-Time Blur Validation for All Fields
-    const validatableFields = ['name', 'email', 'roll_number', 'dept_name', 'college_name', 'phone'];
+    // 4. Real-Time Blur & Input Validation for All Fields
+    function dismissErrorBannerForField(fieldName) {
+        const errorBanner = document.querySelector('.error-banner');
+        if (errorBanner) {
+            const text = errorBanner.textContent.toLowerCase();
+            const readableField = fieldName.replace('_', ' ').toLowerCase();
+            if (text.includes(readableField) || 
+                (fieldName === 'roll_number' && (text.includes('roll') || text.includes('registered') || text.includes('student'))) ||
+                (fieldName === 'email' && (text.includes('email') || text.includes('registered'))) ||
+                (fieldName === 'trans_id' && (text.includes('transaction') || text.includes('trans id') || text.includes('utr')))) {
+                errorBanner.remove();
+            }
+        }
+        const validationBanner = document.querySelector('.form-validation-banner');
+        if (validationBanner) {
+            validationBanner.remove();
+        }
+    }
+
+    const validatableFields = ['name', 'email', 'roll_number', 'dept_name', 'college_name', 'phone', 'trans_id'];
     validatableFields.forEach(fieldName => {
         const input = document.querySelector(`input[name="${fieldName}"]`);
         if (input) {
             input.addEventListener('blur', () => validateField(input));
-            // Also validate on input for real-time feedback after first blur
+            // Invalidate/validate and dismiss error banners immediately on keystroke/edit
             input.addEventListener('input', () => {
-                if (input.classList.contains('invalid') || input.classList.contains('valid')) {
-                    validateField(input);
-                }
+                dismissErrorBannerForField(fieldName);
+                validateField(input);
             });
         }
     });
@@ -443,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 5. Phone Character Counter
     const phoneCounter = document.getElementById('phone-counter');
     if (phoneInput && phoneCounter) {
-        phoneInput.addEventListener('input', () => {
+        const updatePhoneCounter = () => {
             const len = phoneInput.value.replace(/\D/g, '').length;
             phoneCounter.textContent = `${len}/10`;
             phoneCounter.classList.remove('valid', 'invalid');
@@ -452,7 +516,9 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (len > 10) {
                 phoneCounter.classList.add('invalid');
             }
-        });
+        };
+        phoneInput.addEventListener('input', updatePhoneCounter);
+        updatePhoneCounter();
     }
 
     // 6. Pre-Submit Guard: Block form submission if validation fails or uploads missing
@@ -474,10 +540,17 @@ document.addEventListener('DOMContentLoaded', function () {
             const profileTokenEl = document.getElementById('profile_token') || document.getElementById('profile_path');
             const profilePathValue = profileTokenEl?.value;
             if (!profilePathValue || !profilePathValue.trim()) {
-                errors.push('Profile photo is required. Please upload your photo.');
+                errors.push('Profile photo is required.');
                 const profileCard = document.querySelector('#profile-upload')?.closest('.upload-card');
                 if (profileCard) {
                     profileCard.classList.add('upload-failed');
+                    let errEl = profileCard.querySelector('.upload-error');
+                    if (!errEl) {
+                        errEl = document.createElement('div');
+                        errEl.className = 'upload-error';
+                        profileCard.appendChild(errEl);
+                    }
+                    errEl.textContent = 'Profile photo is required. Please upload your photo.';
                 }
             }
 
@@ -485,10 +558,17 @@ document.addEventListener('DOMContentLoaded', function () {
             const paymentTokenEl = document.getElementById('payment_token') || document.getElementById('payment_path');
             const paymentPathValue = paymentTokenEl?.value;
             if (!paymentPathValue || !paymentPathValue.trim()) {
-                errors.push('Payment proof is required. Please upload your payment screenshot.');
+                errors.push('Payment proof is required.');
                 const paymentCard = document.querySelector('#payment-upload')?.closest('.upload-card');
                 if (paymentCard) {
                     paymentCard.classList.add('upload-failed');
+                    let errEl = paymentCard.querySelector('.upload-error');
+                    if (!errEl) {
+                        errEl = document.createElement('div');
+                        errEl.className = 'upload-error';
+                        paymentCard.appendChild(errEl);
+                    }
+                    errEl.textContent = 'Payment proof is required. Please upload your payment screenshot.';
                 }
             }
 
@@ -501,7 +581,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                     </svg>
-                    <span>${errors[0]}</span>
+                    <span>${errors.join(' &bull; ')}</span>
                 `;
 
                 // Insert banner before the form grid

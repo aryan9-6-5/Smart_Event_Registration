@@ -258,3 +258,33 @@ def test_ambiguous_leading_two_equal_to_fee_is_not_auto_confirmed():
 def test_amount_message_formats_money_readably(monkeypatch, value, shown):
     _fee(monkeypatch, '₹500')
     assert f'₹{shown}' in flask_app.amount_message(value, 'over')
+
+
+def test_phonepe_debited_receipt_format_extracts_exact_amount(monkeypatch):
+    """Real-world PhonePe receipts with multi-line 'Paid to' and 'Debited from XXXXXX 500' match fee."""
+    phonepe_text = (
+        "Transaction Successful\n11:04 PM on 06 Aug 2024\n\n"
+        "Paid to\n\n<q obaid 500\nCiti Citibank\n\n"
+        "Transfer Details\n\nTransaction ID\nT2408062303598807918022\n\n"
+        "Debited from\n\nXXXXXX5621 500\nUTR: 421959422820\n"
+    )
+    candidates = flask_app.extract_amounts(phonepe_text)
+    assert Decimal('500') in candidates
+    paid, status = flask_app.classify_amount(candidates, Decimal('500'))
+    assert status == 'exact'
+    assert paid == Decimal('500')
+
+
+def test_paytm_spaced_upi_ref_extracts_confident_trans_id(monkeypatch, dummy_image):
+    """Paytm receipts with spaced UPI Ref No (e.g. 'UPI Ref. No: 4416342 52587') extract 12-digit UTR confidently."""
+    paytm_text = (
+        "Paytm\nPayment Successful\n500 @\nRupees Five Hundred Only\n"
+        "To: Geeta Rani\nPaytm Payments Bank - 6915\n"
+        "From: Raj Bhargava\nState Bank Of India - 6460\n"
+        "UPI Ref. No: 4416342 52587\n19 Feb 2024 , 07:16 PM\n"
+    )
+    monkeypatch.setattr(flask_app.pytesseract, 'image_to_string', lambda *a, **k: paytm_text)
+    trans_id, confident = flask_app.extract_transaction_id(dummy_image)
+    assert trans_id == '441634252587'
+    assert confident is True
+

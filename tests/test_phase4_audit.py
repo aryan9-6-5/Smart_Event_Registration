@@ -17,8 +17,10 @@ def _upload(client, kind, color='cyan'):
 
 
 def _form(prof, pay, **over):
+    roll = over.get('roll_number', 'AUD001')
+    email_default = f"{roll.lower()}@example.com" if roll else 'a@example.com'
     data = {
-        'name': 'Audit User', 'email': 'a@example.com', 'roll_number': 'AUD001',
+        'name': 'Audit User', 'email': email_default, 'roll_number': 'AUD001',
         'dept_name': 'CSE', 'college_name': 'College', 'trans_id': 'MANUAL12345',
         'phone': '9876543210', 'profile_token': prof, 'payment_token': pay,
     }
@@ -95,3 +97,13 @@ def test_admin_login_follows_local_next(client, monkeypatch):
     resp = client.post('/admin/login', query_string={'next': '/admin/checkin'},
                        data={'username': flask_app.ADMIN_USERNAME, 'password': 'pw-for-tests'})
     assert resp.headers['Location'].endswith('/admin/checkin')
+
+
+def test_duplicate_email_rejected_on_main_page(client):
+    r1, _, _ = _register(client, roll_number='UNIQEMAIL1', email='same@example.com')
+    assert r1.status_code == 302
+
+    r2, _, _ = _register(client, 'red', roll_number='UNIQEMAIL2', email='same@example.com')
+    assert r2.status_code == 200
+    assert b'This email is already registered' in r2.data
+

@@ -46,33 +46,33 @@
                 <div class="form-grid">
                     <div class="form-group">
                         {{ form.name.label }}
-                        {{ form.name(class="input-field", placeholder="e.g. Hanumakonda Aryan", id="name") }}
+                        {{ form.name(class="input-field" ~ (" invalid" if form.name.errors else ""), placeholder="e.g. Hanumakonda Aryan", id="name") }}
                         {% for err in form.name.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.email.label }}
-                        {{ form.email(class="input-field", placeholder="e.g. aryan@college.edu", id="email") }}
+                        {{ form.email(class="input-field" ~ (" invalid" if form.email.errors else ""), placeholder="e.g. aryan@college.edu", id="email") }}
                         {% for err in form.email.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.roll_number.label }}
-                        {{ form.roll_number(class="input-field", placeholder="e.g. 23881A6623", id="roll_number") }}
+                        {{ form.roll_number(class="input-field" ~ (" invalid" if form.roll_number.errors else ""), placeholder="e.g. 23881A6623", id="roll_number") }}
                         {% for err in form.roll_number.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.dept_name.label }}
-                        {{ form.dept_name(class="input-field", placeholder="e.g. CSM", id="dept_name") }}
+                        {{ form.dept_name(class="input-field" ~ (" invalid" if form.dept_name.errors else ""), placeholder="e.g. CSM", id="dept_name") }}
                         {% for err in form.dept_name.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                     <div class="form-group">
                         {{ form.college_name.label }}
-                        {{ form.college_name(class="input-field", placeholder="e.g. Vardhaman College of Engineering", id="college_name") }}
+                        {{ form.college_name(class="input-field" ~ (" invalid" if form.college_name.errors else ""), placeholder="e.g. Vardhaman College of Engineering", id="college_name") }}
                         {% for err in form.college_name.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
-                    <div class="form-group" id="trans-id-group" style="display: none;">
+                    <div class="form-group" id="trans-id-group" style="{% if form.trans_id.errors or form.trans_id.data %}display: flex; flex-direction: column;{% else %}display: none;{% endif %}">
                         {{ form.trans_id.label }}
                         <div class="input-with-icon">
-                            {{ form.trans_id(class="input-field", id="trans_id") }}
+                            {{ form.trans_id(class="input-field" ~ (" invalid" if form.trans_id.errors else ""), id="trans_id") }}
                             <span class="lock-icon" id="trans-lock-icon" style="display: none;">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" style="width: 16px; height: 16px;">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
@@ -83,14 +83,14 @@
                     </div>
                     <div class="form-group">
                         {{ form.phone.label }}
-                        {{ form.phone(class="input-field", placeholder="e.g. 9346237108", id="phone") }}
+                        {{ form.phone(class="input-field" ~ (" invalid" if form.phone.errors else ""), placeholder="e.g. 9346237108", id="phone") }}
                         <span class="char-counter" id="phone-counter">0/10</span>
                         {% for err in form.phone.errors %}<span class="field-error">{{ err }}</span>{% endfor %}
                     </div>
                 </div>
 
                 <div class="file-upload-group">
-                    <div class="upload-card">
+                    <div class="upload-card{% if form.profile_token.errors %} upload-failed{% endif %}" id="profile-upload-card">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
                         </svg>
@@ -104,9 +104,12 @@
                         </div>
                         <img id="profile-preview" src="" style="display:none;" />
                         {{ form.profile_token(id="profile_token", style="display: none;") }}
+                        {% for err in form.profile_token.errors %}
+                            <div class="upload-error">{{ err }}</div>
+                        {% endfor %}
                     </div>
 
-                    <div class="upload-card">
+                    <div class="upload-card{% if form.payment_token.errors %} upload-failed{% endif %}" id="payment-upload-card">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
                         </svg>
@@ -120,6 +123,9 @@
                         </div>
                         <img id="payment-preview" src="" style="display:none;" />
                         {{ form.payment_token(id="payment_token", style="display: none;") }}
+                        {% for err in form.payment_token.errors %}
+                            <div class="upload-error">{{ err }}</div>
+                        {% endfor %}
                     </div>
                 </div>
 

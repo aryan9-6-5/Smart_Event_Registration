@@ -317,10 +317,11 @@ def fee_display():
     return str(get_event_config().get('fee', ''))
 
 _AMOUNT = r'(\d[\d,]*(?:\.\d{1,2})?)'
-# OCR frequently misreads the rupee sign as %, € or ¥, so those count as currency markers too
+# OCR frequently misreads the rupee sign as %, €, ¥, <q, or z-, so those count as currency markers too
 _AMOUNT_PATTERNS = [
-    re.compile(r'(?:₹|\brs\b\.?|\binr\b|[€¥%])\s*' + _AMOUNT, re.IGNORECASE),
-    re.compile(r'\b(?:amount|paid|paying|sent|total)\b[^\d\n]{0,20}' + _AMOUNT, re.IGNORECASE),
+    re.compile(r'(?:₹|\brs\b\.?|\binr\b|[€¥%]|<q|[zZ]-?)\s*' + _AMOUNT, re.IGNORECASE),
+    re.compile(r'\b(?:amount|paid|paying|sent|total|debited|transferred)(?:\s+(?:to|from|for))?\b[\s\S]{0,60}?\b' + _AMOUNT + r'\b', re.IGNORECASE),
+    re.compile(r'[xX]{3,}\d*\s+' + _AMOUNT + r'\b', re.IGNORECASE),
     re.compile(r'^\s*[^\w\s]?\s*' + _AMOUNT + r'\s*[^\w\s]{0,2}\s*$', re.MULTILINE),  # big amount alone on its line
 ]
 
@@ -469,16 +470,33 @@ def extract_transaction_id(image_path, text=None):
         if text is None:
             text = pytesseract.image_to_string(Image.open(image_path))
 
-        labelled_utr = r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*(?:Ref|Transaction)[^\w]*(?:ID|No)?|UTR)[^\w]*(\d{12})\b"
-        for pattern in (labelled_utr, r"\b(\d{12})\b"):
+        # Labelled patterns allowing spaces/hyphens within the 12-digit number (e.g. Paytm "UPI Ref. No: 4416342 52587", PhonePe "UTR: 421959422820")
+        labelled_spaced = r"(?:txn[^\w\r\n]?id|Transaction[^\w\r\n]*ID|UPI[^\w\r\n]*(?:Ref|Transaction|Reference)[^\w\r\n]*(?:ID|No|Num|\.)?|UTR)[^\w\d\r\n]*([0-9][0-9 \t-]{10,16}[0-9])"
+        match = re.search(labelled_spaced, text, flags=re.IGNORECASE)
+        if match:
+            candidate = re.sub(r'[ \t-]', '', match.group(1))
+            if len(candidate) == 12 and candidate.isdigit():
+                return candidate, True
+
+        # Unlabelled standard 12-digit patterns (single block or standard 4-4-4 / 6-6 / 7-5 digit groupings)
+        grouped_12 = [
+            r"\b(\d{12})\b",
+            r"\b(\d{4}[ \t-]\d{4}[ \t-]\d{4})\b",
+            r"\b(\d{6,7}[ \t-]\d{5,6})\b",
+            r"\b(\d{3,4}[ \t-]\d{3,4}[ \t-]\d{4,6})\b"
+        ]
+        for pattern in grouped_12:
             match = re.search(pattern, text, flags=re.IGNORECASE)
             if match:
-                return match.group(1), True
+                candidate = re.sub(r'[ \t-]', '', match.group(1))
+                if len(candidate) == 12 and candidate.isdigit():
+                    return candidate, True
 
-        # Loose fallbacks are never trusted: caller must route these to manual review
+        # Loose fallbacks are never trusted: caller must route these to manual review.
+        # Ensure we only match tokens containing at least one digit (never plain English words like "Successful").
         fallbacks = [
-            r"(?:txn[^\w]?id|Transaction[^\w]*ID|UPI[^\w]*Ref|UTR)[^\w]?:?\s*([A-Za-z0-9]{6,50})",
-            r"\b([A-Za-z0-9]{8,25})\b"
+            r"(?:txn[^\w\r\n]?id|Transaction[^\w\r\n]*ID|UPI[^\w\r\n]*Ref|UTR)[^\w\r\n]?:?\s*([A-Za-z0-9-]{6,50})",
+            r"\b(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,25}\b"
         ]
         for pattern in fallbacks:
             match = re.search(pattern, text, flags=re.IGNORECASE)
@@ -603,16 +621,8 @@ class UploadAlreadyUsed(Exception):
     """Raised inside the registration transaction when an upload token was already consumed."""
 
 def init_db():
-    # Clear intermediate/temp uploads folder on server start
-    if os.path.exists(STORAGE_TMP):
-        try:
-            for f in os.listdir(STORAGE_TMP):
-                file_path = os.path.join(STORAGE_TMP, f)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-            print("Temporary upload folder cleared on startup.")
-        except Exception as e:
-            print(f"Error cleaning tmp dir: {e}")
+    # Only clean temporary files that have expired (> 30 mins), never wipe active uploads
+    cleanup_old_temp_files(max_age_seconds=1800)
 
     with sqlite3.connect('students.db') as conn:
         conn.execute("PRAGMA journal_mode=WAL")  # concurrent readers during writes (persistent setting)
@@ -1028,9 +1038,13 @@ def cleanup_old_temp_files(max_age_seconds=1800):  # 30 minutes
                 if os.path.isfile(file_path):
                     if now - os.path.getmtime(file_path) > max_age_seconds:
                         os.remove(file_path)
-            print("Cleanup of older temporary upload files completed.")
         except Exception as e:
             print(f"Error cleaning old temp files: {e}")
+    try:
+        with sqlite3.connect('students.db', timeout=5) as conn:
+            conn.execute("DELETE FROM uploads WHERE created_at < datetime('now', '-30 minutes')")
+    except Exception:
+        pass
 
 @app.route('/upload', methods=['POST'])
 @limiter.limit("15 per minute")
@@ -1461,11 +1475,11 @@ def index():
             abuse_blocked=True)
 
     if not form.validate_on_submit():
-        print("[ERROR] Form validation failed")
-        print("Form errors:", form.errors)
-        
-        # ─── Track failed attempt for abuse detection ────────────────────
         if request.method == 'POST':
+            print("[ERROR] Form validation failed")
+            print("Form errors:", form.errors)
+            
+            # ─── Track failed attempt for abuse detection ────────────────────
             form_snippet = f"name={request.form.get('name','')}, roll={request.form.get('roll_number','')}, phone={request.form.get('phone','')}, email={request.form.get('email','')}"
             user_agent = request.headers.get('User-Agent', 'unknown')
             is_abusive = track_failed_attempt(client_ip, user_agent, form_snippet)
@@ -1477,8 +1491,23 @@ def index():
                     error="Suspicious activity detected from your connection. We've seen repeated invalid submissions from your credentials. This incident has been reported.",
                     abuse_blocked=True)
             
+            # Human-readable summary of what actually failed
+            missing_items = []
+            if form.profile_token.errors:
+                missing_items.append("Profile photo is missing")
+            if form.payment_token.errors:
+                missing_items.append("Payment proof is missing")
+            if form.trans_id.errors and not form.payment_token.errors:
+                missing_items.append("Transaction ID is missing or invalid")
+            for field_name, err_list in form.errors.items():
+                if field_name not in ('profile_token', 'payment_token', 'trans_id', 'csrf_token') and err_list:
+                    label = getattr(form, field_name).label.text
+                    missing_items.append(f"{label}: {err_list[0]}")
+            
+            error_message = "Form validation failed: " + "; ".join(missing_items) + "." if missing_items else "Form validation failed. Please correct the highlighted fields below."
+            
             # Show a banner to the user that validation failed
-            return render_template('index.html', form=form, error="Form validation failed. Please correct the highlighted fields below.")
+            return render_template('index.html', form=form, error=error_message)
 
     elif form.validate_on_submit():
         print("[OK] form.validate_on_submit passed")
@@ -1509,8 +1538,14 @@ def index():
             payment_tmp_path = os.path.join(STORAGE_TMP, stored_payment)
             
             if not os.path.exists(profile_tmp_path):
+                with sqlite3.connect('students.db', timeout=5) as conn:
+                    conn.execute("DELETE FROM uploads WHERE token = ?", (profile_token,))
+                form.profile_token.data = ''
                 return render_template('index.html', form=form, error="Profile photo file is missing. Please re-upload.")
             if not os.path.exists(payment_tmp_path):
+                with sqlite3.connect('students.db', timeout=5) as conn:
+                    conn.execute("DELETE FROM uploads WHERE token = ?", (payment_token,))
+                form.payment_token.data = ''
                 return render_template('index.html', form=form, error="Payment proof file is missing. Please re-upload.")
 
             # Compute phash if not already computed
@@ -1588,6 +1623,23 @@ def index():
 
             # Destination files in private storage
             roll_number_clean = form.roll_number.data.strip().upper()
+            email_clean = form.email.data.strip().lower()
+
+            # Prevent duplicate registration by roll number or email on the registration page
+            with sqlite3.connect('students.db') as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT id FROM students WHERE UPPER(roll_number) = ?", (roll_number_clean,))
+                if cur.fetchone():
+                    if hasattr(form.roll_number, 'errors'):
+                        form.roll_number.errors.append("This roll number is already registered.")
+                    return render_template('index.html', form=form, error="This roll number is already registered. Each student can only register once.")
+
+                cur.execute("SELECT id FROM students WHERE LOWER(email) = ?", (email_clean,))
+                if cur.fetchone():
+                    if hasattr(form.email, 'errors'):
+                        form.email.errors.append("This email is already registered.")
+                    return render_template('index.html', form=form, error="This email is already registered. Each student must use a unique email address.")
+
             profile_ext = os.path.splitext(stored_profile)[1] or ".png"
             payment_ext = os.path.splitext(stored_payment)[1] or ".png"
             
@@ -1631,7 +1683,13 @@ def index():
             except sqlite3.IntegrityError as e:
                 err_str = str(e).lower()
                 if "roll_number" in err_str:
+                    if hasattr(form.roll_number, 'errors'):
+                        form.roll_number.errors.append("This roll number is already registered.")
                     return render_template('index.html', form=form, error="This roll number is already registered. Each student can only register once.")
+                if "email" in err_str:
+                    if hasattr(form.email, 'errors'):
+                        form.email.errors.append("This email is already registered.")
+                    return render_template('index.html', form=form, error="This email is already registered. Each student must use a unique email address.")
                 return render_template('index.html', form=form, error="A registration conflict occurred. Please check your details.")
 
             placard_path = None

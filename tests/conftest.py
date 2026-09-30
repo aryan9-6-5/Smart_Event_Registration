@@ -22,9 +22,13 @@ def test_env(tmp_path_factory):
             return orig_connect(temp_db, *args, **kwargs)
         return orig_connect(database, *args, **kwargs)
         
+    temp_tmp = str(temp_dir / "tmp")
+    os.makedirs(temp_tmp, exist_ok=True)
+    
     return {
         "temp_dir": temp_dir,
         "temp_db": temp_db,
+        "temp_tmp": temp_tmp,
         "orig_connect": orig_connect,
         "patched_connect": patched_connect
     }
@@ -32,6 +36,7 @@ def test_env(tmp_path_factory):
 @pytest.fixture(autouse=True)
 def isolate_db_and_smtp(test_env, monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", test_env["patched_connect"])
+    monkeypatch.setattr(flask_app, "STORAGE_TMP", test_env["temp_tmp"])
     
     # Mock SMTP sending so tests never hit external network or send real emails
     import smtplib

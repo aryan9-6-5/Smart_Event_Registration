@@ -506,7 +506,7 @@ def test_async_email_delivery_and_status_update(client, monkeypatch):
 
     prof2 = get_token('profile')
     pay2 = get_token('payment')
-    data2 = dict(data, roll_number='ASYNC002', trans_id='TXNASYNC002', profile_token=prof2, payment_token=pay2)
+    data2 = dict(data, roll_number='ASYNC002', email='async2@example.com', trans_id='TXNASYNC002', profile_token=prof2, payment_token=pay2)
     resp2 = client.post('/', data=data2, follow_redirects=False)
     assert resp2.status_code == 302
 
