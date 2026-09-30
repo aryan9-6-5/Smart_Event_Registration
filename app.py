@@ -768,42 +768,22 @@ def index():
             if not os.path.exists(payment_tmp_path):
                 return render_template('index.html', form=form, error="Payment proof file is missing. Please re-upload.")
             
-            # Check if roll number or transaction ID already exists
-            roll_number_clean = form.roll_number.data.strip().upper()
-            with sqlite3.connect('students.db') as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT roll_number FROM students WHERE roll_number = ?", (roll_number_clean,))
-                if cursor.fetchone():
-                    return render_template('index.html', form=form, error="This roll number is already registered. Each student can only register once.")
-                
-                cursor.execute("SELECT trans_id FROM students WHERE trans_id = ?", (form.trans_id.data,))
-                if cursor.fetchone():
-                    return render_template('index.html', form=form, error="This Transaction ID has already been used. Each payment can only be used for one registration.")
-
             # Destination files in private storage
+            roll_number_clean = form.roll_number.data.strip().upper()
             profile_ext = os.path.splitext(stored_profile)[1] or ".png"
             payment_ext = os.path.splitext(stored_payment)[1] or ".png"
             
             final_profile_path = os.path.join(STORAGE_PROFILES, f"{roll_number_clean}_profile{profile_ext}")
             final_payment_path = os.path.join(STORAGE_PAYMENTS, f"{roll_number_clean}_payment{payment_ext}")
             
-            # Generate placard using the temp profile photo
-            placard_path = generate_placard(
-                form.name.data,
-                roll_number_clean,
-                form.dept_name.data,
-                form.college_name.data,
-                form.phone.data,
-                profile_tmp_path
-            )
-
             # Generate unguessable public token for attendee
             public_token = uuid.uuid4().hex
 
+            # 1. Atomic reservation via single transaction INSERT
             try:
-                # 1. Database insert first
-                with sqlite3.connect('students.db') as conn:
-                    conn.execute('''
+                with sqlite3.connect('students.db', timeout=10) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
                         INSERT INTO students 
                         (name, email, roll_number, dept_name, college_name, 
                          trans_id, phone, profile_path, payment_path, placard_path, public_token)
@@ -812,24 +792,50 @@ def index():
                         form.name.data, form.email.data, roll_number_clean,
                         form.dept_name.data, form.college_name.data,
                         form.trans_id.data, form.phone.data,
-                        final_profile_path, final_payment_path, placard_path,
+                        final_profile_path, final_payment_path, None,
                         public_token
                     ))
+                    student_id = cursor.lastrowid
+            except sqlite3.IntegrityError as e:
+                err_str = str(e).lower()
+                if "roll_number" in err_str:
+                    return render_template('index.html', form=form, error="This roll number is already registered. Each student can only register once.")
+                elif "trans_id" in err_str:
+                    return render_template('index.html', form=form, error="This Transaction ID has already been used. Each payment can only be used for one registration.")
+                return render_template('index.html', form=form, error="A registration conflict occurred. Please check your details.")
+
+            placard_path = None
+            try:
+                # 2. Generate placard using the temp profile photo
+                placard_path = generate_placard(
+                    form.name.data,
+                    roll_number_clean,
+                    form.dept_name.data,
+                    form.college_name.data,
+                    form.phone.data,
+                    profile_tmp_path
+                )
                 
-                # 2. Move files from temporary staging to permanent private storage
+                # 3. Update placard_path on the student row
+                with sqlite3.connect('students.db', timeout=10) as conn:
+                    conn.execute("UPDATE students SET placard_path = ? WHERE id = ?", (placard_path, student_id))
+
+                # 4. Move files from temporary staging to permanent private storage
                 if os.path.exists(profile_tmp_path):
                     shutil.move(profile_tmp_path, final_profile_path)
                 if os.path.exists(payment_tmp_path):
                     shutil.move(payment_tmp_path, final_payment_path)
             except Exception as e:
-                # Cleanup on failure
+                # Cleanup on failure: delete student record and clean up any generated files
+                with sqlite3.connect('students.db', timeout=10) as conn:
+                    conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
                 if os.path.exists(profile_tmp_path):
                     try: os.remove(profile_tmp_path)
                     except: pass
                 if os.path.exists(payment_tmp_path):
                     try: os.remove(payment_tmp_path)
                     except: pass
-                if os.path.exists(placard_path):
+                if placard_path and os.path.exists(placard_path):
                     try: os.remove(placard_path)
                     except: pass
                 ticket_path = os.path.join(STORAGE_TICKETS, f"ticket_{roll_number_clean}.png")
