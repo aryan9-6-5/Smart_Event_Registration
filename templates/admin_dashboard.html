@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Smart Event Registration</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .admin-nav {
+            background: #1A2A45;
+            color: #ffffff;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .admin-nav h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+        }
+        .admin-nav a {
+            color: #94A3B8;
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        .admin-nav a:hover {
+            color: #ffffff;
+        }
+        .admin-container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .search-box {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #CBD5E1;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .search-box button {
+            padding: 12px 24px;
+            background: #2563EB;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            padding: 24px;
+            margin-bottom: 30px;
+        }
+        .card h2 {
+            font-size: 20px;
+            color: #1A2A45;
+            margin-top: 0;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-pending { background: #FEF3C7; color: #92400E; }
+        .badge-confirmed { background: #D1FAE5; color: #065F46; }
+        .badge-rejected { background: #FEE2E2; color: #991B1B; }
+        .badge-ocr { background: #E0E7FF; color: #3730A3; }
+        .badge-manual { background: #F3F4F6; color: #4B5563; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            text-align: left;
+            padding: 12px 14px;
+            border-bottom: 1px solid #E2E8F0;
+        }
+        th {
+            background: #F8FAFC;
+            color: #475569;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #F8FAFC;
+        }
+        .btn-sm {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-approve { background: #10B981; color: #ffffff; }
+        .btn-approve:hover { background: #059669; }
+        .btn-reject { background: #EF4444; color: #ffffff; }
+        .btn-reject:hover { background: #DC2626; }
+        .btn-view { background: #3B82F6; color: #ffffff; }
+        .action-form {
+            display: inline-block;
+            margin: 0 2px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #64748B;
+        }
+    </style>
+</head>
+<body>
+    <header class="admin-nav">
+        <h1>Smart Event Registration — Admin</h1>
+        <div>
+            <a href="{{ url_for('admin_logout') }}">Sign Out</a>
+        </div>
+    </header>
+
+    <main class="admin-container">
+        <!-- Search Bar -->
+        <form class="search-box" method="GET" action="{{ url_for('admin_dashboard') }}">
+            <input type="text" name="q" value="{{ q or '' }}" placeholder="Search attendees by roll number, name, or transaction ID...">
+            <button type="submit">Search</button>
+            {% if q %}
+            <a href="{{ url_for('admin_dashboard') }}" style="align-self: center; font-size: 14px; color: #64748B; text-decoration: none;">Clear</a>
+            {% endif %}
+        </form>
+
+        {% if q %}
+        <!-- Search Results -->
+        <div class="card">
+            <h2>Search Results for "{{ q }}" ({{ search_results|length }})</h2>
+            {% if search_results %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Roll Number</th>
+                        <th>Email / Phone</th>
+                        <th>Transaction ID</th>
+                        <th>Status</th>
+                        <th>Checked In</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in search_results %}
+                    <tr>
+                        <td><strong>{{ s.name }}</strong></td>
+                        <td>{{ s.roll_number }}</td>
+                        <td>{{ s.email }}<br><small>{{ s.phone }}</small></td>
+                        <td>{{ s.trans_id }}</td>
+                        <td>
+                            <span class="badge badge-{{ s.status|lower }}">{{ s.status }}</span>
+                        </td>
+                        <td>
+                            {% if s.checked_in_at %}
+                            <span style="color: #059669; font-weight: 500;">✓ {{ s.checked_in_at }}</span>
+                            {% else %}
+                            <span style="color: #94A3B8;">Not checked in</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">No matching attendees found.</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Pending Approvals -->
+        <div class="card">
+            <h2>Pending Payment Verifications <span class="badge badge-pending">{{ pending_students|length }}</span></h2>
+            {% if pending_students %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Roll Number</th>
+                        <th>Contact</th>
+                        <th>Transaction ID</th>
+                        <th>Source</th>
+                        <th>Proof</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pending_students %}
+                    <tr>
+                        <td><strong>{{ p.name }}</strong></td>
+                        <td>{{ p.roll_number }}</td>
+                        <td>{{ p.email }}<br><small>{{ p.phone }}</small></td>
+                        <td><code>{{ p.trans_id }}</code></td>
+                        <td>
+                            <span class="badge badge-{{ p.trans_id_source|lower }}">{{ p.trans_id_source }}</span>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('admin_payment_proof', student_id=p.id) }}" target="_blank" class="btn-sm btn-view">View Proof</a>
+                        </td>
+                        <td>
+                            <form class="action-form" method="POST" action="{{ url_for('admin_approve', student_id=p.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn-sm btn-approve">Approve</button>
+                            </form>
+                            <form class="action-form" method="POST" action="{{ url_for('admin_reject', student_id=p.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn-sm btn-reject">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">All caught up! No registrations are pending review.</div>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>

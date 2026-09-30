@@ -12,7 +12,8 @@ import hashlib
 from datetime import datetime
 from collections import defaultdict
 from email.message import EmailMessage
-from flask import Flask, request, render_template, url_for, jsonify, redirect, abort, send_from_directory, send_file
+from functools import wraps
+from flask import Flask, request, render_template, url_for, jsonify, redirect, abort, send_from_directory, send_file, session
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from flask_wtf import FlaskForm, CSRFProtect
@@ -764,6 +765,93 @@ def success_page(public_token):
     return render_template('success.html', 
         placard_url=url_for('view_placard', public_token=public_token),
         email_failed=email_failed)
+
+# ─── Admin Portal ─────────────────────────────────────────────────────────────
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return redirect(url_for('admin_login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['admin_logged_in'] = True
+            next_url = request.args.get('next')
+            return redirect(next_url or url_for('admin_dashboard'))
+        return render_template('admin_login.html', error="Invalid credentials"), 200
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_logged_in', None)
+    return redirect(url_for('admin_login'))
+
+@app.route('/admin', methods=['GET'])
+@admin_required
+def admin_dashboard():
+    q = request.args.get('q', '').strip()
+    with sqlite3.connect('students.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        # Pending students awaiting verification
+        cur.execute('''
+            SELECT id, name, roll_number, email, phone, trans_id, ocr_trans_id, trans_id_source, created_at
+            FROM students
+            WHERE status = 'PENDING'
+            ORDER BY id DESC
+        ''')
+        pending_students = cur.fetchall()
+
+        # Search results if query provided
+        search_results = []
+        if q:
+            cur.execute('''
+                SELECT id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at
+                FROM students
+                WHERE roll_number LIKE ? OR name LIKE ? OR trans_id LIKE ?
+                ORDER BY id DESC
+            ''', (f"%{q}%", f"%{q}%", f"%{q}%"))
+            search_results = cur.fetchall()
+
+    return render_template('admin_dashboard.html', 
+        pending_students=pending_students,
+        search_results=search_results,
+        q=q)
+
+@app.route('/admin/approve/<int:student_id>', methods=['POST'])
+@admin_required
+def admin_approve(student_id):
+    with sqlite3.connect('students.db') as conn:
+        conn.execute("UPDATE students SET status = 'CONFIRMED' WHERE id = ?", (student_id,))
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/reject/<int:student_id>', methods=['POST'])
+@admin_required
+def admin_reject(student_id):
+    with sqlite3.connect('students.db') as conn:
+        conn.execute("UPDATE students SET status = 'REJECTED' WHERE id = ?", (student_id,))
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/payment_proof/<int:student_id>', methods=['GET'])
+@admin_required
+def admin_payment_proof(student_id):
+    with sqlite3.connect('students.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT payment_path FROM students WHERE id = ?", (student_id,))
+        row = cur.fetchone()
+        if not row or not row[0] or not os.path.exists(row[0]):
+            abort(404)
+        return send_file(os.path.abspath(row[0]))
 
 @app.route('/', methods=['GET', 'POST'])
 def index():

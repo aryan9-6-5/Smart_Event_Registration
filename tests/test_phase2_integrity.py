@@ -342,5 +342,59 @@ def test_registration_generates_and_stores_ticket_secret(client):
         assert ticket_secret is not None
         assert len(ticket_secret) >= 16
 
+def test_admin_portal_unauthenticated_redirect(client):
+    """Test: Accessing /admin unauthenticated redirects to /admin/login."""
+    resp = client.get('/admin', follow_redirects=False)
+    assert resp.status_code == 302
+    assert '/admin/login' in resp.headers.get('Location', '')
+
+def test_admin_portal_login_and_actions(client):
+    """Test: Admin login, viewing pending registrations, approving, rejecting, and searching."""
+    # 1. Failed login with wrong password
+    bad_login = client.post('/admin/login', data={'username': 'admin', 'password': 'wrongpassword'}, follow_redirects=False)
+    assert bad_login.status_code == 200
+    assert b"Invalid credentials" in bad_login.data
+
+    # 2. Successful login
+    good_login = client.post('/admin/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=False)
+    assert good_login.status_code == 302
+    assert '/admin' in good_login.headers.get('Location', '')
+
+    # Insert test pending student and confirmed student
+    with sqlite3.connect('students.db') as conn:
+        conn.execute('''
+            INSERT INTO students (name, email, roll_number, dept_name, college_name, trans_id, phone, status)
+            VALUES ('Pending Student', 'pending@test.com', 'PEND001', 'CSE', 'Test College', 'TXNPEND123', '9876543210', 'PENDING')
+        ''')
+        pending_id = conn.execute("SELECT id FROM students WHERE roll_number = 'PEND001'").fetchone()[0]
+
+    # 3. Access admin dashboard - should show pending student
+    dash = client.get('/admin')
+    assert dash.status_code == 200
+    assert b"PEND001" in dash.data
+    assert b"TXNPEND123" in dash.data
+
+    # 4. Approve student
+    approve_resp = client.post(f'/admin/approve/{pending_id}', follow_redirects=False)
+    assert approve_resp.status_code in (200, 302)
+
+    with sqlite3.connect('students.db') as conn:
+        status = conn.execute("SELECT status FROM students WHERE id = ?", (pending_id,)).fetchone()[0]
+        assert status == 'CONFIRMED'
+
+    # 5. Reject student
+    reject_resp = client.post(f'/admin/reject/{pending_id}', follow_redirects=False)
+    assert reject_resp.status_code in (200, 302)
+
+    with sqlite3.connect('students.db') as conn:
+        status = conn.execute("SELECT status FROM students WHERE id = ?", (pending_id,)).fetchone()[0]
+        assert status == 'REJECTED'
+
+    # 6. Admin search
+    search_resp = client.get('/admin?q=PEND001')
+    assert search_resp.status_code == 200
+    assert b"Pending Student" in search_resp.data
+
+
 
 
