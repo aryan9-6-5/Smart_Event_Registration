@@ -11,3 +11,11 @@ def test_name_equals_test_does_not_bypass_validation(client):
     assert b"Registration Form" in response.data
     # Should contain validation error or form errors, not redirect to success
     assert response.headers.get('Location') is None
+
+def test_no_secret_in_source_or_stdout():
+    """Bug test: app.py must not contain print statements leaking SMTP secrets."""
+    with open('app.py', 'r', encoding='utf-8') as f:
+        content = f.read()
+    assert 'print("USING:",' not in content
+    assert 'print(\'USING:\',' not in content
+

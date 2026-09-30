@@ -67,7 +67,6 @@ SMTP_CONFIG = {
     'password': os.getenv('SMTP_PASSWORD')
 }
 
-print("USING:", os.getenv("SMTP_EMAIL"), os.getenv("SMTP_PASSWORD"))
 # Ensure directories exist
 os.makedirs("static/uploads/profiles", exist_ok=True)
 os.makedirs("static/uploads/payments", exist_ok=True)
@@ -742,4 +741,5 @@ def index():
 if __name__ == '__main__':
     init_db()
     ensure_test_images()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    flask_debug = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
+    app.run(host='0.0.0.0', port=5000, debug=flask_debug)
