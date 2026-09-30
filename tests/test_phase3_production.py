@@ -22,3 +22,15 @@ def test_tesseract_cmd_fallback_to_shutil_which(monkeypatch):
     cmd = flask_app.configure_tesseract()
     assert cmd == "/usr/bin/tesseract"
     assert pytesseract.pytesseract.tesseract_cmd == "/usr/bin/tesseract"
+
+def test_security_headers_present(client):
+    """Test: Response includes critical HTTP security headers and Content-Security-Policy."""
+    resp = client.get('/')
+    assert resp.status_code == 200
+    assert resp.headers.get('X-Content-Type-Options') == 'nosniff'
+    assert resp.headers.get('X-Frame-Options') == 'SAMEORIGIN'
+    assert resp.headers.get('Referrer-Policy') == 'strict-origin-when-cross-origin'
+    csp = resp.headers.get('Content-Security-Policy')
+    assert csp is not None
+    assert "default-src 'self'" in csp
+

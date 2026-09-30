@@ -38,6 +38,22 @@ def block_private_file_access():
     if request.path.startswith(('/uploads/', '/placards/', '/tickets/', '/static/uploads/', '/static/placards/', '/static/tickets/')):
         abort(404)
 
+@app.after_request
+def set_security_headers(response):
+    """Enforce defensive HTTP response headers and Content-Security-Policy."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'"
+    )
+    return response
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
