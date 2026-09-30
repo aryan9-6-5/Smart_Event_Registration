@@ -589,25 +589,6 @@ def upload_file():
         return jsonify({'error': error_msg}), 500
 
 
-@app.route('/test', methods=['GET'])
-def test_registration():
-    try:
-        placard_path = generate_placard(
-            TEST_DATA["name"],
-            TEST_DATA["roll_number"],
-            TEST_DATA["dept_name"],
-            TEST_DATA["college_name"],
-            TEST_DATA["phone"],
-            TEST_DATA["profile_path"]
-        )
-        
-        email_sent = send_email(TEST_DATA["email"], placard_path)
-        return redirect(url_for('success_page', roll_number=TEST_DATA['roll_number'], email_failed=(0 if email_sent else 1)))
-    
-    except Exception as e:
-        return f"Test failed: {str(e)}", 500
-
-
 @app.route('/success/<roll_number>', methods=['GET'])
 def success_page(roll_number):
     """Dedicated GET route for the success page — prevents resubmission on refresh."""
@@ -625,37 +606,7 @@ def success_page(roll_number):
 def index():
     cleanup_old_temp_files()
     form = RegistrationForm()
-    
-    if request.method == 'POST' and request.form.get('name') == 'test':
-        try:
-            data = {
-                "name": request.form.get('name', TEST_DATA["name"]),
-                "email": request.form.get('email', TEST_DATA["email"]),
-                "roll_number": request.form.get('roll_number', TEST_DATA["roll_number"]),
-                "dept_name": request.form.get('dept_name', TEST_DATA["dept_name"]),
-                "college_name": request.form.get('college_name', TEST_DATA["college_name"]),
-                "trans_id": request.form.get('trans_id', TEST_DATA["trans_id"]),
-                "phone": request.form.get('phone', TEST_DATA["phone"]),
-            }
-            
-            profile_path = request.form.get('profile_path')
-            if not profile_path or not os.path.exists(profile_path):
-                profile_path = TEST_DATA["profile_path"]
-                
-            placard_path = generate_placard(
-                data["name"],
-                data["roll_number"],
-                data["dept_name"],
-                data["college_name"],
-                data["phone"],
-                profile_path
-            )
-            
-            email_sent = send_email(data["email"], placard_path)
-            return redirect(url_for('success_page', roll_number=data["roll_number"], email_failed=(0 if email_sent else 1)))
-            
-        except Exception as e:
-            return render_template('index.html', form=form, error=f"Test error: {str(e)}")
+
     # ─── Abuse Detection Gate ─────────────────────────────────────────────
     client_ip = request.remote_addr or 'unknown'
     if is_ip_blocked(client_ip):
