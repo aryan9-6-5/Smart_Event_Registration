@@ -23,13 +23,19 @@ from flask_limiter.util import get_remote_address
 from wtforms import StringField, EmailField
 from wtforms.validators import DataRequired, Email, Length, Regexp
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash
 import pytesseract
 from PIL import Image
 import re
 load_dotenv()
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(24))  # Fallback to random key if not set
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or secrets.token_hex(24)
+if not os.getenv('SECRET_KEY'):
+    print("[WARN] SECRET_KEY not set: using a random key. Admin sessions AND issued QR tickets become invalid on restart.")
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', 'False').lower() in ('true', '1', 't')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max upload
 ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
 Image.MAX_IMAGE_PIXELS = 25_000_000  # Decompression bomb guard
@@ -145,7 +151,7 @@ def inject_event_config():
 # SMTP Configuration
 SMTP_CONFIG = {
     'server': os.getenv('SMTP_SERVER'),
-    'port': int(os.getenv('SMTP_PORT')),
+    'port': int(os.getenv('SMTP_PORT', '587')),
     'email': os.getenv('SMTP_EMAIL'),
     'password': os.getenv('SMTP_PASSWORD')
 }
@@ -396,6 +402,9 @@ TEST_DATA = {
     "payment_path": TEST_PAYMENT_PATH
 }
 
+class UploadAlreadyUsed(Exception):
+    """Raised inside the registration transaction when an upload token was already consumed."""
+
 def init_db():
     # Clear intermediate/temp uploads folder on server start
     if os.path.exists(STORAGE_TMP):
@@ -409,6 +418,7 @@ def init_db():
             print(f"Error cleaning tmp dir: {e}")
 
     with sqlite3.connect('students.db') as conn:
+        conn.execute("PRAGMA journal_mode=WAL")  # concurrent readers during writes (persistent setting)
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -680,12 +690,18 @@ def generate_placard(name, roll, dept, college, phone, profile_path, ticket_secr
     return placard_path
 
 
-def send_email(to_email, placard_path):
+def send_email(to_email, placard_path, pending=False):
     msg = EmailMessage()
-    msg['Subject'] = 'College Tech Summit 2024 Registration Confirmation'
+    event_title = get_event_config().get('title', 'Event')
     msg['From'] = SMTP_CONFIG['email']
     msg['To'] = to_email
-    msg.set_content('Your registration is confirmed! Find your ticket attached.')
+    if pending:
+        msg['Subject'] = f'{event_title} Registration Received (Pending Review)'
+        msg.set_content('We received your registration. Your payment proof is pending manual review. '
+                        'Your ticket is attached but will only be valid for entry once your registration is approved.')
+    else:
+        msg['Subject'] = f'{event_title} Registration Confirmation'
+        msg.set_content('Your registration is confirmed! Find your ticket attached.')
 
     try:
         with open(placard_path, 'rb') as f:
@@ -697,7 +713,6 @@ def send_email(to_email, placard_path):
     try:
         print(f"Connecting to {SMTP_CONFIG['server']}:{SMTP_CONFIG['port']}")
         server = smtplib.SMTP(SMTP_CONFIG['server'], SMTP_CONFIG['port'], timeout=10)
-        server.set_debuglevel(1)  # Enable debug output
         server.ehlo()  # Identify to server
         server.starttls()  # Start TLS encryption
         server.ehlo()  # Re-identify after STARTTLS
@@ -711,14 +726,22 @@ def send_email(to_email, placard_path):
         print(f"SMTP error: {str(e)}")
         return False
 
-def send_email_async(student_id, to_email, placard_path):
-    """Background worker task to deliver attendee placard email and update email_status."""
+EMAIL_RETRY_DELAYS = (2, 5)  # seconds to wait before retry #1 and #2 (3 attempts total)
+
+def send_email_async(student_id, to_email, placard_path, pending=False):
+    """Background worker task to deliver attendee placard email (with retries) and update email_status."""
     success = False
-    try:
-        success = bool(send_email(to_email, placard_path))
-    except Exception as e:
-        print(f"Error in send_email_async: {e}")
-        success = False
+    kwargs = {'pending': True} if pending else {}
+    for attempt, delay in enumerate((0,) + tuple(EMAIL_RETRY_DELAYS)):
+        if delay:
+            time.sleep(delay)
+        try:
+            success = bool(send_email(to_email, placard_path, **kwargs))
+        except Exception as e:
+            print(f"Error in send_email_async (attempt {attempt + 1}): {e}")
+            success = False
+        if success:
+            break
 
     try:
         with sqlite3.connect('students.db', timeout=10) as conn:
@@ -859,22 +882,38 @@ def success_page(public_token):
     """Dedicated GET route for the success page using unguessable public_token."""
     with sqlite3.connect('students.db') as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT roll_number, placard_path FROM students WHERE public_token = ?", (public_token,))
+        cursor.execute("SELECT status, placard_path, email_status FROM students WHERE public_token = ?", (public_token,))
         row = cursor.fetchone()
         if not row:
             abort(404)
-        placard_path = row[1]
-        if not os.path.exists(placard_path):
+        status, placard_path, email_status = row
+        if not placard_path or not os.path.exists(placard_path):
             abort(404)
 
-    email_failed = request.args.get('email_failed') == '1'
-    return render_template('success.html', 
+    return render_template('success.html',
         placard_url=url_for('view_placard', public_token=public_token),
-        email_failed=email_failed)
+        email_failed=(email_status == 'failed'),
+        status=status)
 
 # ─── Admin Portal ─────────────────────────────────────────────────────────────
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
+# Preferred: ADMIN_PASSWORD_HASH (werkzeug generate_password_hash). Legacy plaintext ADMIN_PASSWORD still works.
+# With neither set, admin login is disabled (no default password).
+ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
+
+def verify_admin_credentials(username, password):
+    """Constant-time credential check; fails closed when no admin password is configured."""
+    if not username or not password:
+        return False
+    user_ok = hmac.compare_digest(username.encode(), (ADMIN_USERNAME or '').encode())
+    if ADMIN_PASSWORD_HASH:
+        pw_ok = check_password_hash(ADMIN_PASSWORD_HASH, password)
+    elif ADMIN_PASSWORD:
+        pw_ok = hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode())
+    else:
+        return False
+    return user_ok and pw_ok
 
 def safe_next_url(target):
     """Allow only same-site relative paths as post-login redirect targets."""
@@ -896,7 +935,8 @@ def admin_login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        if verify_admin_credentials(username, password):
+            session.clear()
             session['admin_logged_in'] = True
             return redirect(safe_next_url(request.args.get('next')) or url_for('admin_dashboard'))
         return render_template('admin_login.html', error="Invalid credentials"), 200
@@ -928,7 +968,7 @@ def admin_dashboard():
         search_results = []
         if q:
             cur.execute('''
-                SELECT id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at
+                SELECT id, name, roll_number, email, phone, trans_id, status, checked_in_at, created_at, email_status
                 FROM students
                 WHERE roll_number LIKE ? OR name LIKE ? OR trans_id LIKE ?
                 ORDER BY id DESC
@@ -944,7 +984,10 @@ def admin_dashboard():
 @admin_required
 def admin_approve(student_id):
     with sqlite3.connect('students.db') as conn:
-        conn.execute("UPDATE students SET status = 'CONFIRMED' WHERE id = ?", (student_id,))
+        cur = conn.execute("UPDATE students SET status = 'CONFIRMED' WHERE id = ? AND status = 'PENDING'", (student_id,))
+        approved = cur.rowcount == 1
+    if approved:
+        queue_student_email(student_id)  # tell the attendee their ticket is now valid
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/reject/<int:student_id>', methods=['POST'])
@@ -953,6 +996,22 @@ def admin_reject(student_id):
     with sqlite3.connect('students.db') as conn:
         conn.execute("UPDATE students SET status = 'REJECTED' WHERE id = ?", (student_id,))
     return redirect(url_for('admin_dashboard'))
+
+def queue_student_email(student_id):
+    """Queue (re)delivery of the placard email. Returns False for unknown/rejected students."""
+    with sqlite3.connect('students.db', timeout=10) as conn:
+        row = conn.execute("SELECT email, placard_path, status FROM students WHERE id = ?", (student_id,)).fetchone()
+        if not row or row[2] == 'REJECTED' or not row[1]:
+            return False
+        conn.execute("UPDATE students SET email_status = 'pending' WHERE id = ?", (student_id,))
+    EMAIL_EXECUTOR.submit(send_email_async, student_id, row[0], row[1], row[2] == 'PENDING')
+    return True
+
+@app.route('/admin/resend/<int:student_id>', methods=['POST'])
+@admin_required
+def admin_resend(student_id):
+    queue_student_email(student_id)
+    return redirect(url_for('admin_dashboard', q=request.form.get('q', '')))
 
 @app.route('/admin/payment_proof/<int:student_id>', methods=['GET'])
 @admin_required
@@ -1092,7 +1151,6 @@ def index():
             return render_template('index.html', form=form, error="Form validation failed. Please correct the highlighted fields below.")
 
     elif form.validate_on_submit():
-        print("Form submitted with data:", {field.name: field.data for field in form})
         print("[OK] form.validate_on_submit passed")
         try:
             profile_token = (form.profile_token.data or '').strip()
@@ -1154,6 +1212,8 @@ def index():
                 trans_id_source = 'manual'
                 student_status = 'PENDING'
             
+            final_trans_id = final_trans_id.upper()  # UNIQUE(trans_id) must be case-insensitive
+
             # Destination files in private storage
             roll_number_clean = form.roll_number.data.strip().upper()
             profile_ext = os.path.splitext(stored_profile)[1] or ".png"
@@ -1185,6 +1245,13 @@ def index():
                         student_status, ocr_trans_id, trans_id_source, payment_phash, ticket_secret
                     ))
                     student_id = cursor.lastrowid
+
+                    # Consume both upload tokens in the same transaction: single-use, race-free
+                    cursor.execute("DELETE FROM uploads WHERE token IN (?, ?)", (profile_token, payment_token))
+                    if cursor.rowcount != 2:
+                        raise UploadAlreadyUsed()  # rolls the INSERT back
+            except UploadAlreadyUsed:
+                return render_template('index.html', form=form, error="Your uploads were already used. Please re-upload your photo and payment proof.")
             except sqlite3.IntegrityError as e:
                 err_str = str(e).lower()
                 if "roll_number" in err_str:
@@ -1235,7 +1302,7 @@ def index():
                 raise e
 
             # Offload email sending to background thread pool
-            EMAIL_EXECUTOR.submit(send_email_async, student_id, form.email.data, placard_path)
+            EMAIL_EXECUTOR.submit(send_email_async, student_id, form.email.data, placard_path, student_status == 'PENDING')
             
             # Clear any abuse tracking for this IP on successful registration
             ABUSE_TRACKER.pop(client_ip, None)
@@ -1244,7 +1311,8 @@ def index():
             return redirect(url_for('success_page', public_token=public_token))
         
         except Exception as e:
-            return render_template('index.html', form=form, error=str(e))
+            app.logger.exception("Registration failed: %s", e)
+            return render_template('index.html', form=form, error="Something went wrong while processing your registration. Please try again.")
     
     return render_template('index.html', form=form)
 

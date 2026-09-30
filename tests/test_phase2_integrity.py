@@ -348,8 +348,12 @@ def test_admin_portal_unauthenticated_redirect(client):
     assert resp.status_code == 302
     assert '/admin/login' in resp.headers.get('Location', '')
 
-def test_admin_portal_login_and_actions(client):
+def test_admin_portal_login_and_actions(client, monkeypatch):
     """Test: Admin login, viewing pending registrations, approving, rejecting, and searching."""
+    import app as flask_app
+    monkeypatch.setattr(flask_app, 'ADMIN_PASSWORD_HASH', None, raising=False)
+    monkeypatch.setattr(flask_app, 'ADMIN_PASSWORD', 'admin123')
+    monkeypatch.setattr(flask_app.EMAIL_EXECUTOR, 'submit', lambda *a, **k: None)
     # 1. Failed login with wrong password
     bad_login = client.post('/admin/login', data={'username': 'admin', 'password': 'wrongpassword'}, follow_redirects=False)
     assert bad_login.status_code == 200
@@ -395,9 +399,11 @@ def test_admin_portal_login_and_actions(client):
     assert search_resp.status_code == 200
     assert b"Pending Student" in search_resp.data
 
-def test_admin_checkin_gate(client):
+def test_admin_checkin_gate(client, monkeypatch):
     """Test: Gate check-in verifies signatures, blocks unconfirmed tickets, and executes atomic idempotent check-in."""
     import app as flask_app
+    monkeypatch.setattr(flask_app, 'ADMIN_PASSWORD_HASH', None, raising=False)
+    monkeypatch.setattr(flask_app, 'ADMIN_PASSWORD', 'admin123')
 
     # 1. Unauthenticated request redirects
     unauth = client.post('/admin/checkin', data={'qr_payload': 'TEST'}, follow_redirects=False)

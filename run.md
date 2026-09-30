@@ -52,7 +52,18 @@ SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
 SMTP_EMAIL=your_email@gmail.com
 SMTP_PASSWORD=your_gmail_app_password
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD_HASH=paste_hash_here
 ```
+
+Generate the admin password hash (admin login is disabled until `ADMIN_PASSWORD_HASH` or `ADMIN_PASSWORD` is set):
+
+```bash
+python -c "from werkzeug.security import generate_password_hash as g; print(g('choose-a-strong-password'))"
+```
+
+> [!IMPORTANT]
+> `SECRET_KEY` must be set and kept stable: it signs admin sessions and the QR tickets. Rotate any key that was ever committed to git. Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
 
 > [!IMPORTANT]
 > If using Gmail, you must generate a **Google App Password** rather than using your main account password. You can do this in your Google Account settings under Security > 2-Step Verification > App Passwords.

@@ -27,6 +27,16 @@
             </div>
             {% endif %}
 
+            {% if status == 'PENDING' %}
+            <h2>Registration Received</h2>
+            <p class="success-message">
+                Your payment proof is pending manual review. Your placard is below, but it will only be valid for
+                entry once an organizer approves your registration. Please check back or watch your email.
+            </p>
+            {% elif status == 'REJECTED' %}
+            <h2>Registration Not Approved</h2>
+            <p class="success-message">Your registration could not be verified. Please contact the organizers.</p>
+            {% else %}
             <h2>You're In! 🚀</h2>
             <p class="success-message">
                 {% if email_failed %}
@@ -36,7 +46,8 @@
                 Please bring this placard to the event.
                 {% endif %}
             </p>
-            
+            {% endif %}
+
             <div class="placard-container">
                 <img src="{{ placard_url }}" alt="Your Event Placard" class="event-placard">
             </div>

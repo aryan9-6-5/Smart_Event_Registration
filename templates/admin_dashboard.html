@@ -160,6 +160,7 @@
                         <th>Transaction ID</th>
                         <th>Status</th>
                         <th>Checked In</th>
+                        <th>Email</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -177,6 +178,16 @@
                             <span style="color: #059669; font-weight: 500;">✓ {{ s.checked_in_at }}</span>
                             {% else %}
                             <span style="color: #94A3B8;">Not checked in</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>Email: {{ s.email_status }}</small>
+                            {% if s.status != 'REJECTED' %}
+                            <form class="action-form" method="POST" action="{{ url_for('admin_resend', student_id=s.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <input type="hidden" name="q" value="{{ q }}"/>
+                                <button type="submit" class="btn-sm btn-view">Resend</button>
+                            </form>
                             {% endif %}
                         </td>
                     </tr>

@@ -32,11 +32,13 @@ def isolate_db_and_smtp(test_env, monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", test_env["patched_connect"])
     
     # Mock SMTP sending so tests never hit external network
-    monkeypatch.setattr(flask_app, "send_email", lambda to, placard: True)
+    monkeypatch.setattr(flask_app, "send_email", lambda to, placard, *a, **k: True)
     monkeypatch.setattr(flask_app, "send_abuse_warning_email", lambda ip, ua, form: True)
     
     # Initialize DB in the test database
     flask_app.init_db()
+
+    monkeypatch.setattr(flask_app, "EMAIL_RETRY_DELAYS", (), raising=False)
 
     # Reset in-memory abuse state so one test's failures never block the next
     flask_app.ABUSE_TRACKER.clear()

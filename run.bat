@@ -65,7 +65,7 @@ if "%SELECTED%"=="4" (
 )
 if "%SELECTED%"=="5" (
     echo [INFO] Opening Admin Portal...
-    start http://127.0.0.1:5000/admin/dashboard
+    start http://127.0.0.1:5000/admin
 )
 if "%SELECTED%"=="6" (
     echo Exiting.
