@@ -202,3 +202,73 @@ def test_invalid_manual_trans_id_rejected(client):
     assert resp.status_code == 200
     assert b"Transaction ID must be alphanumeric" in resp.data
 
+def test_duplicate_payment_screenshot_flagged_as_pending(client):
+    """Test: Uploading an identical/duplicate payment screenshot flags the new registration as PENDING."""
+    import io
+    from PIL import Image
+
+    # Upload unique profile
+    def upload_img(color, kind):
+        buf = io.BytesIO()
+        img = Image.new('RGB', (120, 120), color=color)
+        img.save(buf, 'PNG')
+        buf.seek(0)
+        resp = client.post('/upload', data={'file': (buf, f'{kind}.png'), 'type': kind}, content_type='multipart/form-data')
+        return resp.get_json()['token']
+
+    prof1 = upload_img('red', 'profile')
+    prof2 = upload_img('blue', 'profile')
+
+    # Upload exact same payment screenshot twice
+    pay1 = upload_img('green', 'payment')
+    pay2 = upload_img('green', 'payment')
+
+    # Both simulated as having valid OCR extracted IDs (so otherwise they would be CONFIRMED)
+    with sqlite3.connect('students.db') as conn:
+        conn.execute("UPDATE uploads SET ocr_trans_id = '111122223333' WHERE token = ?", (pay1,))
+        conn.execute("UPDATE uploads SET ocr_trans_id = '444455556666' WHERE token = ?", (pay2,))
+
+    # First student registers with pay1
+    resp1 = client.post('/', data={
+        'name': 'Student One',
+        'email': 's1@example.com',
+        'roll_number': 'DUP001',
+        'dept_name': 'CSE',
+        'college_name': 'Engineering College',
+        'trans_id': '111122223333',
+        'phone': '9876543210',
+        'profile_token': prof1,
+        'payment_token': pay1
+    }, follow_redirects=False)
+    assert resp1.status_code == 302
+
+    with sqlite3.connect('students.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, payment_phash FROM students WHERE roll_number = 'DUP001'")
+        s1_status, s1_phash = cursor.fetchone()
+        assert s1_status == 'CONFIRMED'
+        assert s1_phash is not None
+
+    # Second student registers with duplicate payment image pay2
+    resp2 = client.post('/', data={
+        'name': 'Student Two',
+        'email': 's2@example.com',
+        'roll_number': 'DUP002',
+        'dept_name': 'CSE',
+        'college_name': 'Engineering College',
+        'trans_id': '444455556666',
+        'phone': '9876543211',
+        'profile_token': prof2,
+        'payment_token': pay2
+    }, follow_redirects=False)
+    assert resp2.status_code == 302
+
+    with sqlite3.connect('students.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, payment_phash FROM students WHERE roll_number = 'DUP002'")
+        s2_status, s2_phash = cursor.fetchone()
+        # Even though OCR found a trans_id, duplicate payment image forces status to PENDING
+        assert s2_status == 'PENDING'
+        assert s2_phash == s1_phash
+
+

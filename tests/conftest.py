@@ -38,6 +38,13 @@ def isolate_db_and_smtp(test_env, monkeypatch):
     # Initialize DB in the test database
     flask_app.init_db()
 
+    # Clear tables between tests for isolation
+    with test_env["patched_connect"](test_env["temp_db"]) as conn:
+        conn.execute("DELETE FROM students")
+        conn.execute("DELETE FROM uploads")
+        conn.execute("DELETE FROM abuse_attempts")
+
+
 @pytest.fixture
 def app(test_env):
     flask_app.app.config.update({

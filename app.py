@@ -198,6 +198,32 @@ def extract_transaction_id(image_path):
         print("OCR error:", e)
 
     return None
+
+def compute_image_phash(image_path):
+    """Compute 64-bit difference hash (dHash) string using Pillow."""
+    try:
+        with Image.open(image_path) as img:
+            resized = img.convert('L').resize((9, 8), Image.Resampling.LANCZOS)
+            diff = []
+            for row in range(8):
+                for col in range(8):
+                    diff.append('1' if resized.getpixel((col, row)) > resized.getpixel((col + 1, row)) else '0')
+            decimal_val = int(''.join(diff), 2)
+            return f"{decimal_val:016x}"
+    except Exception as e:
+        print(f"Error computing phash for {image_path}: {e}")
+        return None
+
+def hamming_distance(hash1_hex, hash2_hex):
+    """Calculate bitwise Hamming distance between two 16-hex-character hashes."""
+    if not hash1_hex or not hash2_hex:
+        return 64
+    try:
+        val1 = int(hash1_hex, 16)
+        val2 = int(hash2_hex, 16)
+        return (val1 ^ val2).bit_count()
+    except Exception:
+        return 64
 # Create test images if they don't exist
 def ensure_test_images():
     if not os.path.exists(TEST_PROFILE_PATH):
@@ -338,8 +364,18 @@ def init_db():
             kind TEXT NOT NULL,
             stored_name TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ocr_trans_id TEXT
+            ocr_trans_id TEXT,
+            payment_phash TEXT
         )''')
+
+        cursor.execute("PRAGMA table_info(uploads)")
+        upload_cols = [row[1] for row in cursor.fetchall()]
+        if 'payment_phash' not in upload_cols:
+            try:
+                cursor.execute("ALTER TABLE uploads ADD COLUMN payment_phash TEXT")
+                conn.commit()
+            except Exception as e:
+                print(f"Error adding payment_phash to uploads: {e}")
 
 # def generate_placard(name, roll, dept, college, phone, profile_path):
 #     placard = Image.new('RGB', (1200, 800), '#ffffff')
@@ -647,16 +683,18 @@ def upload_file():
 
     try:
         trans_id = None
-        # OCR only for payment screenshots
+        payment_phash = None
+        # OCR and perceptual hash only for payment screenshots
         if kind == 'payment':
             trans_id = extract_transaction_id(filepath)
-            print(f"OCR extracted Transaction ID: {trans_id}")
+            payment_phash = compute_image_phash(filepath)
+            print(f"OCR extracted Transaction ID: {trans_id}, phash: {payment_phash}")
 
         with sqlite3.connect('students.db') as conn:
             conn.execute('''
-                INSERT INTO uploads (token, kind, stored_name, ocr_trans_id)
-                VALUES (?, ?, ?, ?)
-            ''', (token, kind, filename, trans_id))
+                INSERT INTO uploads (token, kind, stored_name, ocr_trans_id, payment_phash)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (token, kind, filename, trans_id, payment_phash))
 
         response_data = {
             'message': 'File uploaded successfully',
@@ -752,7 +790,7 @@ def index():
                 if not row_prof:
                     return render_template('index.html', form=form, error="Profile photo upload is invalid or expired. Please re-upload.")
                 
-                cursor.execute("SELECT stored_name, ocr_trans_id FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
+                cursor.execute("SELECT stored_name, ocr_trans_id, payment_phash FROM uploads WHERE token = ? AND kind = 'payment'", (payment_token,))
                 row_pay = cursor.fetchone()
                 if not row_pay:
                     return render_template('index.html', form=form, error="Payment proof upload is invalid or expired. Please re-upload.")
@@ -760,16 +798,8 @@ def index():
             stored_profile = row_prof[0]
             stored_payment = row_pay[0]
             ocr_trans_id = row_pay[1]
+            payment_phash = row_pay[2]
 
-            if ocr_trans_id and ocr_trans_id.strip():
-                final_trans_id = ocr_trans_id.strip()
-                trans_id_source = 'ocr'
-                student_status = 'CONFIRMED'
-            else:
-                final_trans_id = form.trans_id.data.strip()
-                trans_id_source = 'manual'
-                student_status = 'PENDING'
-            
             profile_tmp_path = os.path.join(STORAGE_TMP, stored_profile)
             payment_tmp_path = os.path.join(STORAGE_TMP, stored_payment)
             
@@ -777,6 +807,36 @@ def index():
                 return render_template('index.html', form=form, error="Profile photo file is missing. Please re-upload.")
             if not os.path.exists(payment_tmp_path):
                 return render_template('index.html', form=form, error="Payment proof file is missing. Please re-upload.")
+
+            # Compute phash if not already computed
+            if not payment_phash and os.path.exists(payment_tmp_path):
+                payment_phash = compute_image_phash(payment_tmp_path)
+
+            # Check for duplicate payment screenshot across registered students
+            is_duplicate_payment = False
+            if payment_phash:
+                with sqlite3.connect('students.db') as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, payment_phash FROM students WHERE payment_phash IS NOT NULL")
+                    for prev_id, prev_hash in cur.fetchall():
+                        if hamming_distance(payment_phash, prev_hash) <= 4:
+                            is_duplicate_payment = True
+                            print(f"[WARN] Duplicate payment proof detected matching student id={prev_id}")
+                            break
+
+            if is_duplicate_payment:
+                # Force to PENDING review even if OCR was valid
+                final_trans_id = ocr_trans_id.strip() if (ocr_trans_id and ocr_trans_id.strip()) else form.trans_id.data.strip()
+                trans_id_source = 'ocr' if (ocr_trans_id and ocr_trans_id.strip()) else 'manual'
+                student_status = 'PENDING'
+            elif ocr_trans_id and ocr_trans_id.strip():
+                final_trans_id = ocr_trans_id.strip()
+                trans_id_source = 'ocr'
+                student_status = 'CONFIRMED'
+            else:
+                final_trans_id = form.trans_id.data.strip()
+                trans_id_source = 'manual'
+                student_status = 'PENDING'
             
             # Destination files in private storage
             roll_number_clean = form.roll_number.data.strip().upper()
@@ -797,15 +857,15 @@ def index():
                         INSERT INTO students 
                         (name, email, roll_number, dept_name, college_name, 
                          trans_id, phone, profile_path, payment_path, placard_path, public_token,
-                         status, ocr_trans_id, trans_id_source)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         status, ocr_trans_id, trans_id_source, payment_phash)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ''', (
                         form.name.data, form.email.data, roll_number_clean,
                         form.dept_name.data, form.college_name.data,
                         final_trans_id, form.phone.data,
                         final_profile_path, final_payment_path, None,
                         public_token,
-                        student_status, ocr_trans_id, trans_id_source
+                        student_status, ocr_trans_id, trans_id_source, payment_phash
                     ))
                     student_id = cursor.lastrowid
             except sqlite3.IntegrityError as e:
