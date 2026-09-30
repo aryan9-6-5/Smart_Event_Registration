@@ -188,7 +188,24 @@ def send_abuse_warning_email_async(ip, user_agent, form_data):
 TEST_PROFILE_PATH = "static/uploads/profiles/test_profile.jpg"
 TEST_PAYMENT_PATH = "static/uploads/payments/test_payment.jpg"
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+def configure_tesseract():
+    """Discover or configure the Tesseract OCR binary path across platforms."""
+    env_cmd = os.getenv('TESSERACT_CMD')
+    if env_cmd and os.path.exists(env_cmd):
+        pytesseract.pytesseract.tesseract_cmd = env_cmd
+        return env_cmd
+    discovered = shutil.which('tesseract')
+    if discovered:
+        pytesseract.pytesseract.tesseract_cmd = discovered
+        return discovered
+    default_win = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    if os.path.exists(default_win):
+        pytesseract.pytesseract.tesseract_cmd = default_win
+        return default_win
+    print("[WARN] Tesseract OCR binary not found. OCR features will fail gracefully.")
+    return None
+
+TESSERACT_CMD = configure_tesseract()
 
 def extract_transaction_id(image_path):
     try:
