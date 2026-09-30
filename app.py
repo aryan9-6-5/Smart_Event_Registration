@@ -23,7 +23,14 @@ load_dotenv()
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(24))  # Fallback to random key if not set
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max upload
+ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
+Image.MAX_IMAGE_PIXELS = 25_000_000  # Decompression bomb guard
 csrf = CSRFProtect(app)
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'error': 'File size exceeds maximum limit of 5 MB'}), 413
 
 # Private Storage Configuration (outside static web root)
 STORAGE_DIR = os.getenv('STORAGE_DIR', 'storage')
@@ -565,20 +572,44 @@ def upload_file():
     else:
         kind = 'profile'  # fallback
 
-    # Generate random upload token and stored filename
+    # Validate extension whitelist
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({'error': 'Invalid file type. Allowed formats: PNG, JPG, JPEG, WEBP.'}), 400
+
+    # Generate random upload token
     token = uuid.uuid4().hex
-    ext = os.path.splitext(file.filename)[1] or ".png"
-    filename = f"{token}{ext}"
-    filepath = os.path.join(STORAGE_TMP, filename)
-    
+
+    # Validate image data with Pillow verify()
     try:
-        # Ensure upload directory exists
+        img = Image.open(file.stream)
+        img.verify()
+    except Image.DecompressionBombError:
+        return jsonify({'error': 'Image exceeds maximum allowable pixel dimensions.'}), 400
+    except Exception:
+        return jsonify({'error': 'Invalid or corrupted image file.'}), 400
+
+    # Rewind stream, re-open, and re-encode to sanitize image
+    file.stream.seek(0)
+    try:
+        img = Image.open(file.stream)
+        target_ext = '.png' if ext == '.png' else '.jpg'
+        filename = f"{token}{target_ext}"
+        filepath = os.path.join(STORAGE_TMP, filename)
+        
         os.makedirs(STORAGE_TMP, exist_ok=True)
-        
-        # Save the uploaded file
-        file.save(filepath)
-        print(f"File saved to temp: {filepath}")
-        
+        if target_ext == '.jpg':
+            img = img.convert('RGB')
+            img.save(filepath, 'JPEG', quality=90)
+        else:
+            img.save(filepath, 'PNG')
+        print(f"File sanitized and saved to temp: {filepath}")
+    except Image.DecompressionBombError:
+        return jsonify({'error': 'Image exceeds maximum allowable pixel dimensions.'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Failed to process image: {str(e)}'}), 400
+
+    try:
         trans_id = None
         # OCR only for payment screenshots
         if kind == 'payment':
@@ -601,7 +632,7 @@ def upload_file():
         return jsonify(response_data), 200
 
     except Exception as e:
-        error_msg = f"Failed to save file: {str(e)}"
+        error_msg = f"Failed to record upload: {str(e)}"
         print(error_msg)
         return jsonify({'error': error_msg}), 500
 

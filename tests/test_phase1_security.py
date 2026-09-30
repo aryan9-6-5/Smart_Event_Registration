@@ -80,6 +80,40 @@ def test_path_injection_in_token_fields_fails(client):
     assert not os.path.exists('static/uploads/profiles/HACK001_profile.env')
     assert not os.path.exists('storage/profiles/HACK001_profile.env')
 
+def test_upload_rejects_svg(client):
+    """Test: Uploading SVG files must be rejected."""
+    import io
+    svg_data = io.BytesIO(b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+    resp = client.post('/upload', data={'file': (svg_data, 'malicious.svg'), 'type': 'profile'}, content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+def test_upload_rejects_html_renamed_to_png(client):
+    """Test: Uploading HTML file disguised as .png must be rejected by image verification."""
+    import io
+    html_data = io.BytesIO(b'<!DOCTYPE html><html><body><h1>Fake Image</h1></body></html>')
+    resp = client.post('/upload', data={'file': (html_data, 'evil.png'), 'type': 'profile'}, content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+def test_upload_rejects_oversized_file(client):
+    """Test: Uploading file larger than 5 MB must be rejected."""
+    import io
+    large_data = io.BytesIO(b'0' * (6 * 1024 * 1024))  # 6 MB
+    resp = client.post('/upload', data={'file': (large_data, 'huge.png'), 'type': 'profile'}, content_type='multipart/form-data')
+    assert resp.status_code in (400, 413)
+
+def test_upload_rejects_decompression_bomb(client, monkeypatch):
+    """Test: Decompression bomb must be rejected."""
+    import io
+    from PIL import Image
+    monkeypatch.setattr(Image, 'MAX_IMAGE_PIXELS', 100)  # Very low threshold to trigger bomb
+    file_bytes = io.BytesIO()
+    img = Image.new('RGB', (50, 50), color='red')  # 2500 pixels > 100
+    img.save(file_bytes, 'PNG')
+    file_bytes.seek(0)
+    resp = client.post('/upload', data={'file': (file_bytes, 'bomb.png'), 'type': 'profile'}, content_type='multipart/form-data')
+    assert resp.status_code == 400
+
+
 
 
 
