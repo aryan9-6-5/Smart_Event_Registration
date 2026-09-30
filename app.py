@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from flask_wtf import FlaskForm, CSRFProtect
 from wtforms import StringField, EmailField
 from wtforms.validators import DataRequired, Email, Length, Regexp
+from werkzeug.middleware.proxy_fix import ProxyFix
 import pytesseract
 from PIL import Image
 import re
@@ -32,6 +33,26 @@ ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
 Image.MAX_IMAGE_PIXELS = 25_000_000  # Decompression bomb guard
 csrf = CSRFProtect(app)
 EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email_worker")
+
+def configure_proxy_fix(target_app):
+    """Configure ProxyFix middleware when behind a reverse proxy (e.g. Nginx, Cloudflare)."""
+    try:
+        num_proxies = int(os.getenv('NUM_PROXIES', '0'))
+    except ValueError:
+        num_proxies = 0
+
+    if num_proxies > 0:
+        target_app.wsgi_app = ProxyFix(
+            target_app.wsgi_app,
+            x_for=num_proxies,
+            x_proto=num_proxies,
+            x_host=num_proxies,
+            x_prefix=num_proxies
+        )
+        print(f"ProxyFix configured with {num_proxies} trusted proxy hops.")
+    return target_app
+
+configure_proxy_fix(app)
 
 @app.before_request
 def block_private_file_access():

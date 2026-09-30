@@ -34,3 +34,18 @@ def test_security_headers_present(client):
     assert csp is not None
     assert "default-src 'self'" in csp
 
+def test_proxy_fix_middleware_configuration(monkeypatch):
+    """Test: configure_proxy_fix applies ProxyFix when NUM_PROXIES is configured."""
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    test_app = flask_app.app
+    orig_wsgi = test_app.wsgi_app
+
+    try:
+        monkeypatch.setenv("NUM_PROXIES", "1")
+        flask_app.configure_proxy_fix(test_app)
+        assert isinstance(test_app.wsgi_app, ProxyFix)
+    finally:
+        test_app.wsgi_app = orig_wsgi
+
+
